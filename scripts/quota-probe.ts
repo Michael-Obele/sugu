@@ -12,7 +12,7 @@ function getFlag(name: string, fallback?: string): string | undefined {
 	return fallback;
 }
 
-const target = getFlag('target', 'http://localhost:8787')!;
+const target = getFlag('target', process.env.SUGU_URL ?? 'http://localhost:8787')!;
 const adminToken = getFlag('admin-token', process.env.ADMIN_TOKEN)!;
 const max = parseInt(getFlag('max', '10000000')!, 10);
 const dryRun = args.includes('--dry-run');
