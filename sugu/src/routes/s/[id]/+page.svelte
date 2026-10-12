@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { afterNavigate } from '$app/navigation';
 	import { goto } from '$app/navigation';
 	import { getToken, setOnUnauthorized } from '$lib/api';
 	import { sessionStore } from '$lib/session.svelte';
+
 	import ConnectionBanner from '$lib/components/ConnectionBanner.svelte';
 	import MessageList from '$lib/components/MessageList.svelte';
 	import Composer from '$lib/components/Composer.svelte';
@@ -11,6 +13,28 @@
 	let sessionId = $derived(page.params['id'] ?? '');
 	let composerText = $state('');
 	let pendingSend = $state<string | null>(null);
+	let lastConnectedId: string | null = null;
+
+	function doConnect(id: string): void {
+		if (!id) return;
+		if (lastConnectedId === id) return;
+		const token = getToken();
+		if (!token) {
+			goto(`/login?redirect=${encodeURIComponent(`/s/${id}`)}`);
+			return;
+		}
+		lastConnectedId = id;
+		sessionStore.connect(id, flushPending);
+	}
+
+	function flushPending(): void {
+		if (pendingSend && sessionStore.connection === 'open') {
+			const text = pendingSend;
+			pendingSend = null;
+			composerText = '';
+			sessionStore.send(text);
+		}
+	}
 
 	onMount(() => {
 		const token = getToken();
@@ -19,23 +43,19 @@
 			return;
 		}
 		setOnUnauthorized(() => goto(`/login?redirect=${encodeURIComponent(`/s/${sessionId}`)}`));
-		sessionStore.connect(sessionId);
+		doConnect(sessionId);
 
 		return () => {
 			sessionStore.disconnect();
+			lastConnectedId = null;
 		};
 	});
 
-	// Handle sessionId changes (navigation)
-	$effect(() => {
-		const id = sessionId;
-		if (id) {
-			const token = getToken();
-			if (token) {
-				if (sessionStore.sessionId !== id) {
-					sessionStore.connect(id);
-				}
-			}
+	afterNavigate(() => {
+		// Handle rapid navigation between sessions without $effect
+		const id = page.params['id'] ?? '';
+		if (id && id !== lastConnectedId) {
+			doConnect(id);
 		}
 	});
 
@@ -55,16 +75,6 @@
 	function handleRerun(text: string): void {
 		handleSend(text);
 	}
-
-	// When reconnecting, send pending message
-	$effect(() => {
-		if (sessionStore.connection === 'open' && pendingSend) {
-			const text = pendingSend;
-			pendingSend = null;
-			composerText = '';
-			sessionStore.send(text);
-		}
-	});
 </script>
 
 <div class="flex h-dvh flex-col bg-background">

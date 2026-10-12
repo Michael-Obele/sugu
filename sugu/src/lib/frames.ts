@@ -110,45 +110,10 @@ export function applyFrame(state: FrameState, frame: Frame): FrameState {
 			return state;
 		}
 		default: {
-			// hello, send, cancel, approve, ack are not expected inbound
-			return state;
+			// Unknown inbound frame — ignore and count
+			return { ...state, ignoredCount: state.ignoredCount + 1 };
 		}
 	}
-}
-
-/**
- * Apply a raw unknown frame: if it fails Valibot validation, ignore it.
- * Returns state unchanged and increments ignoredCount.
- */
-export function applyRawFrame(state: FrameState, raw: unknown): FrameState {
-	// We don't have parseFrame here without importing valibot; caller should
-	// use parseFrame first. This is a convenience for testing unknown frames.
-	// If raw is not a valid Frame shape, treat as ignored.
-	if (!raw || typeof raw !== 'object') {
-		return { ...state, ignoredCount: state.ignoredCount + 1 };
-	}
-	const r = raw as Record<string, unknown>;
-	if (r['v'] !== 1 || typeof r['t'] !== 'string') {
-		return { ...state, ignoredCount: state.ignoredCount + 1 };
-	}
-	// Valid envelope but unknown t - ignore
-	const known = [
-		'hello',
-		'send',
-		'cancel',
-		'approve',
-		'ack',
-		'token',
-		'msg',
-		'tool',
-		'state',
-		'err'
-	];
-	if (!known.includes(r['t'] as string)) {
-		return { ...state, ignoredCount: state.ignoredCount + 1 };
-	}
-	// Known t but we can't validate without Valibot - treat as ignored for this helper
-	return { ...state, ignoredCount: state.ignoredCount + 1 };
 }
 
 export function initialFrameState(): FrameState {

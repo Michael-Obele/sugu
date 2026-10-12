@@ -20,8 +20,13 @@ export type SessionMeta = {
 
 let token: string | null = null;
 
+function hasLocalStorage(): boolean {
+	return typeof localStorage !== 'undefined';
+}
+
 export function setToken(t: string | null): void {
 	token = t;
+	if (!hasLocalStorage()) return;
 	if (t) {
 		try {
 			localStorage.setItem('sugu_token', t);
@@ -39,6 +44,7 @@ export function setToken(t: string | null): void {
 
 export function getToken(): string | null {
 	if (token) return token;
+	if (!hasLocalStorage()) return token;
 	try {
 		const stored = localStorage.getItem('sugu_token');
 		if (stored) token = stored;

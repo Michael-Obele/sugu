@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { applyFrame, applyRawFrame, initialFrameState, type FrameState } from '../sugu/src/lib/frames';
+import { applyFrame, initialFrameState, type FrameState } from '../sugu/src/lib/frames';
+import { parseFrame } from '../src/shared/contracts';
 import type { Frame } from '../src/shared/contracts';
 
 function token(seq: number, delta: string): Frame {
@@ -14,7 +15,7 @@ function msg(seq: number, text: string, opts?: { interrupted?: boolean }): Frame
 		id: seq,
 		role: 'assistant',
 		text,
-		...(opts?.interrupted ? { interrupted: true } : {})
+		...(opts?.interrupted ? { interrupted: true } : {}),
 	} as Frame;
 }
 
@@ -78,27 +79,54 @@ describe('frames', () => {
 		expect(state.messages[2]!.text).toBe('third');
 	});
 
-	test('unknown/invalid frame is ignored rather than thrown', () => {
+	test('unknown/invalid frame is ignored rather than thrown (real boundary: parseFrame → applyFrame)', () => {
 		let state = initialFrameState();
 		state = applyFrame(state, msg(1, 'hello'));
 		expect(state.messages.length).toBe(1);
 
-		// Unknown frame via applyRawFrame
+		// Unknown t via real boundary: JSON.parse → parseFrame → applyFrame
+		// parseFrame rejects unknown t, so we simulate the socket's error path:
+		// on parse failure we do NOT call applyFrame and do NOT mutate state.
+		// But if a frame somehow reaches applyFrame with an unknown t, it must
+		// increment ignoredCount and not throw.
+		const unknownRaw = JSON.parse(JSON.stringify({ v: 1, t: 'unknown_frame', seq: 99 }));
+		const parsed = parseFrame(unknownRaw);
+		expect(parsed.ok).toBe(false);
+		// Socket would surface via onError and not call applyFrame — state unchanged
+		expect(state.messages.length).toBe(1);
+		expect(state.ignoredCount).toBe(0);
+
+		// Directly test applyFrame's default branch with an unknown frame
+		// (cast to Frame to exercise the boundary)
 		const before = state.messages.length;
-		state = applyRawFrame(state, { v: 1, t: 'unknown_frame', seq: 99 });
+		state = applyFrame(state, { v: 1, t: 'unknown_frame', seq: 99 } as unknown as Frame);
 		expect(state.messages.length).toBe(before);
 		expect(state.ignoredCount).toBe(1);
 
-		// Invalid JSON-like object
-		state = applyRawFrame(state, null);
-		expect(state.ignoredCount).toBe(2);
+		// Invalid envelope (wrong version) — parseFrame rejects
+		const badVersion = JSON.parse(JSON.stringify({ v: 2, t: 'msg', seq: 1, id: 1, role: 'assistant', text: 'hi' }));
+		const parsed2 = parseFrame(badVersion);
+		expect(parsed2.ok).toBe(false);
+		expect(state.ignoredCount).toBe(1);
 
-		state = applyRawFrame(state, { v: 2, t: 'msg', seq: 1 });
-		expect(state.ignoredCount).toBe(3);
+		// Null/invalid JSON — JSON.parse would throw, socket catches and surfaces via onError
+		let threw = false;
+		try {
+			JSON.parse('not json');
+		} catch {
+			threw = true;
+		}
+		expect(threw).toBe(true);
+		expect(state.ignoredCount).toBe(1);
 
 		// Original messages still intact
 		expect(state.messages.length).toBe(1);
 		expect(state.messages[0]!.text).toBe('hello');
+
+		// Unknown frame via applyFrame with valid envelope but unexpected t
+		state = applyFrame(state, { v: 1, t: 'bogus', seq: 2 } as unknown as Frame);
+		expect(state.ignoredCount).toBe(2);
+		expect(state.messages.length).toBe(1);
 	});
 
 	test('tokens for different seq create separate bubbles', () => {
@@ -133,7 +161,7 @@ describe('frames', () => {
 			runId: 'r1',
 			name: 'sepia.search',
 			status: 'ok',
-			summary: '340 ms'
+			summary: '340 ms',
 		} as Frame;
 		state = applyFrame(state, toolFrame);
 		expect(state.tools.length).toBe(1);

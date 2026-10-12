@@ -5,6 +5,7 @@
 
 import { parseFrame } from '../../../src/shared/contracts';
 import type { Frame } from '../../../src/shared/contracts';
+import { Backoff } from './backoff';
 
 export type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed';
 
@@ -22,7 +23,7 @@ export class SuguSocket {
 	private events: SocketEvents;
 	private closed = false;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-	private backoffMs = 1000;
+	private backoff = new Backoff();
 
 	constructor(sessionId: string, token: string, since: number, events: SocketEvents) {
 		this.sessionId = sessionId;
@@ -40,7 +41,7 @@ export class SuguSocket {
 		this.ws = ws;
 
 		ws.addEventListener('open', () => {
-			this.backoffMs = 1000;
+			this.backoff.reset();
 			this.events.onState('open');
 			const hello: Record<string, unknown> = {
 				v: 1,
@@ -91,8 +92,7 @@ export class SuguSocket {
 
 	private scheduleReconnect(): void {
 		if (this.closed) return;
-		const delay = this.backoffMs;
-		this.backoffMs = Math.min(this.backoffMs * 2, 8000);
+		const delay = this.backoff.next();
 		this.reconnectTimer = setTimeout(() => {
 			this.connect();
 		}, delay);

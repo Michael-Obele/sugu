@@ -20,9 +20,9 @@
 	}}
 	disabled={!isFailed}
 	class={cn(
-		'flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm',
+		'flex min-h-[44px] w-full min-w-[44px] items-center gap-2 rounded-md border px-3 py-2 text-left text-sm',
 		isFailed
-			? 'border-amber-500/50 bg-amber-500/10 text-amber-200'
+			? 'border-warning/50 bg-warning/10 text-warning-foreground'
 			: 'border-border bg-card text-muted-foreground',
 		isFailed && 'cursor-pointer'
 	)}
@@ -41,7 +41,9 @@
 </button>
 
 {#if isFailed && expanded && summary}
-	<div class="mt-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-100">
+	<div
+		class="mt-1 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground"
+	>
 		{summary}
 	</div>
 {/if}

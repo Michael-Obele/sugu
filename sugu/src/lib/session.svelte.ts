@@ -20,10 +20,12 @@ export class SessionStore {
 	tools = $derived(this.frameState.tools);
 
 	constructor() {
-		this.token = getToken();
+		if (typeof localStorage !== 'undefined') {
+			this.token = getToken();
+		}
 	}
 
-	connect(sessionId: string): void {
+	connect(sessionId: string, onOpen?: () => void): void {
 		this.disconnect();
 		this.sessionId = sessionId;
 		const token = this.token ?? getToken();
@@ -44,6 +46,7 @@ export class SessionStore {
 			},
 			onState: (state: ConnectionState) => {
 				this.connection = state;
+				if (state === 'open' && onOpen) onOpen();
 			},
 			onError: (message: string) => {
 				this.error = message;
