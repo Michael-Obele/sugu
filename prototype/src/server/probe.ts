@@ -5,11 +5,11 @@ import * as v from 'valibot';
 import { errorJson, json } from './http';
 
 const ComputeSchema = v.strictObject({
-	iterations: v.number(),
+	iterations: v.pipe(v.number(), v.finite()),
 });
 
 const RowsSchema = v.strictObject({
-	count: v.number(),
+	count: v.pipe(v.number(), v.finite()),
 });
 
 export async function handleProbeCompute(request: Request): Promise<Response> {
@@ -54,12 +54,15 @@ export async function handleProbeRows(request: Request, env: Env): Promise<Respo
 	if (!Number.isFinite(count) || count < 0 || count > 10_000) {
 		return errorJson('count out of range', 400);
 	}
-	const stub = env.SESSIONS.getByName('probe') as unknown as { probeWrite: (n: number) => Promise<number> };
-	// If the DO exposes probeWrite, use it; otherwise fall back to error
-	if (typeof stub.probeWrite === 'function') {
+	const stub = env.SESSIONS.getByName('probe');
+	try {
 		const written = await stub.probeWrite(count);
 		return json({ written });
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		if (msg.includes('ceiling exceeded')) {
+			return errorJson(msg, 429);
+		}
+		throw e;
 	}
-	// Fallback: try via fetch to a probe endpoint on the DO (if method not available via RPC)
-	return errorJson('probeWrite not available', 500);
 }

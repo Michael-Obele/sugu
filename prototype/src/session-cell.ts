@@ -84,14 +84,20 @@ export class SessionCell extends DurableObject<Env> {
 		return [...cursor] as unknown as { id: number; type: string; role: string | null; payload: string }[];
 	}
 
+	// Phase-0-only: quota probe helper. Deleted along with the probe endpoints after Phase 0.
 	async probeWrite(count: number): Promise<number> {
 		const n = Math.floor(count);
 		if (n <= 0) return 0;
-		const ts = nowIso();
+		// Bound total probe rows so the probe cannot eat the free tier's row/storage budget.
+		const PROBE_ROWS_CEILING = 50_000;
+		const existing = this.ctx.storage.sql.exec("SELECT COUNT(*) as c FROM events WHERE type = 'probe'").one() as unknown as { c: number };
+		if (existing.c + n > PROBE_ROWS_CEILING) {
+			throw new Error(`probe rows ceiling exceeded: ${existing.c} existing + ${n} requested > ${PROBE_ROWS_CEILING}`);
+		}
 		for (let i = 0; i < n; i++) {
 			this.ctx.storage.sql.exec(
 				'INSERT INTO events (ts, type, role, payload, meta) VALUES (?, ?, ?, ?, ?)',
-				ts,
+				nowIso(),
 				'probe',
 				null,
 				JSON.stringify({ n: i }),

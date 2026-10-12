@@ -2,6 +2,11 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { startDevServer, type DevServer } from './helpers/server';
 import { signToken } from '../src/server/auth';
 
+// Each login test uses its own cf-connecting-ip so buckets are deterministic and isolated.
+function loginHeaders(ip: string): Record<string, string> {
+	return { 'content-type': 'application/json', 'cf-connecting-ip': ip };
+}
+
 let server: DevServer;
 let BASE: string;
 let WS_BASE: string;
@@ -33,7 +38,7 @@ describe('worker edge', () => {
 	test('POST /api/login with wrong passphrase -> 401', async () => {
 		const res = await fetch(`${BASE}/api/login`, {
 			method: 'POST',
-			headers: { 'content-type': 'application/json' },
+			headers: loginHeaders('10.0.0.1'),
 			body: JSON.stringify({ passphrase: 'wrong' }),
 		});
 		expect(res.status).toBe(401);
@@ -44,7 +49,7 @@ describe('worker edge', () => {
 	test('POST /api/login with correct passphrase -> token that works on GET /api/sessions', async () => {
 		const loginRes = await fetch(`${BASE}/api/login`, {
 			method: 'POST',
-			headers: { 'content-type': 'application/json' },
+			headers: loginHeaders('10.0.0.2'),
 			body: JSON.stringify({ passphrase: PASSPHRASE }),
 		});
 		expect(loginRes.status).toBe(200);
@@ -165,5 +170,25 @@ describe('worker edge', () => {
 		expect(res.status).toBe(200);
 		const text = await res.text();
 		expect(text).toContain('<!doctype html');
+	});
+
+	test('login throttle: 5 failed attempts then 6th returns 429 (only failures count)', async () => {
+		const throttleIp = `10.9.9.${Date.now() % 250}`;
+		for (let i = 0; i < 5; i++) {
+			const res = await fetch(`${BASE}/api/login`, {
+				method: 'POST',
+				headers: loginHeaders(throttleIp),
+				body: JSON.stringify({ passphrase: 'wrong-throttle' }),
+			});
+			expect(res.status).toBe(401);
+		}
+		const sixth = await fetch(`${BASE}/api/login`, {
+			method: 'POST',
+			headers: loginHeaders(throttleIp),
+			body: JSON.stringify({ passphrase: 'wrong-throttle' }),
+		});
+		expect(sixth.status).toBe(429);
+		const body = (await sixth.json()) as Record<string, unknown>;
+		expect(body.error).toBeDefined();
 	});
 });

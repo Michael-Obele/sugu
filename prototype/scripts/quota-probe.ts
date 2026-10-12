@@ -1,5 +1,5 @@
 export {};
-// Local quota-probe driver — walks CPU and rows-written limits against /api/probe/*
+// Local quota-probe driver — walks CPU, rows-written, and request-rate limits against /api/probe/* and /api/health
 // Usage: bun --cwd /home/node/Documents/GitHub/sugu/prototype run scripts/quota-probe.ts [--target <url>] [--admin-token <t>] [--max <n>] [--dry-run]
 // Never deploy, never run against anything but the URL you were given.
 // Local workerd limits are NOT production limits — do not record local numbers as free-tier facts.
@@ -84,6 +84,42 @@ async function probeRows(): Promise<ProbeResult[]> {
 	return results;
 }
 
+async function probeRequests(): Promise<ProbeResult[]> {
+	// Conservative ceiling for request-rate walk: at most 1000 requests by default,
+	// even if --max is larger, so the probe never eats the free tier's daily budget.
+	const requestMax = Math.min(max, 1000);
+	if (dryRun) {
+		return [{ label: `requests up to ${requestMax}`, ok: true, detail: `dry-run: would send ${requestMax} sequential GET ${target}/api/health` }];
+	}
+	let count = 0;
+	let lastStatus = 0;
+	let lastDetail = '';
+	for (let i = 0; i < requestMax; i++) {
+		try {
+			const res = await fetch(`${target}/api/health`);
+			lastStatus = res.status;
+			if (!res.ok) {
+				const body = await res.text();
+				lastDetail = `${res.status} ${body.slice(0, 200)}`;
+				break;
+			}
+			// Drain body so connection can be reused
+			await res.text();
+			count++;
+		} catch (e) {
+			lastDetail = String(e).slice(0, 200);
+			break;
+		}
+	}
+	if (count === requestMax) {
+		return [{ label: `requests ${count}/${requestMax}`, ok: true, detail: `all ${count} succeeded (ceiling ${requestMax} reached, no failure observed)` }];
+	}
+	if (count === 0) {
+		return [{ label: `requests 0/${requestMax}`, ok: false, detail: lastDetail || `failed at 0 (${lastStatus})` }];
+	}
+	return [{ label: `requests ${count}/${requestMax}`, ok: false, detail: `stopped at ${count}: ${lastDetail || lastStatus}` }];
+}
+
 async function main() {
 	console.log(`# Quota probe — target=${target} max=${max} dryRun=${dryRun}`);
 	console.log('');
@@ -95,12 +131,13 @@ async function main() {
 		console.log('## Plan (dry-run)');
 		console.log('- POST /api/probe/compute with iterations: 1k, 10k, 100k, 1M, 5M, 10M (up to --max)');
 		console.log('- POST /api/probe/rows with count: 10, 100, 1000, 5000 (up to --max)');
-		console.log('- Request-rate walk: sequential GET /api/health bursts (not yet implemented)');
+		console.log(`- Request-rate walk: sequential GET /api/health up to ${Math.min(max, 1000)} requests (capped at 1000 by default, --max lowers it)`);
 		console.log('');
 	}
 
 	const compute = await probeCompute();
 	const rows = await probeRows();
+	const requests = await probeRequests();
 
 	function printTable(title: string, rows2: ProbeResult[]) {
 		console.log(`## ${title}`);
@@ -114,6 +151,7 @@ async function main() {
 
 	printTable('CPU walk', compute);
 	printTable('Rows-written walk', rows);
+	printTable('Request-rate walk', requests);
 
 	console.log('_Probe complete. Paste the tables into plan/research.md. Local numbers are workerd, not production._');
 }

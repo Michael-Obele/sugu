@@ -17,15 +17,22 @@ const CreateSessionSchema = v.strictObject({
 });
 
 function getClientIp(request: Request): string {
-	return (
-		request.headers.get('cf-connecting-ip') ??
-		request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-		request.headers.get('x-real-ip') ??
-		'unknown'
-	);
+	// Cloudflare always sets cf-connecting-ip in production; local tests must set it explicitly.
+	return request.headers.get('cf-connecting-ip') ?? 'unknown';
 }
 
-async function checkLoginThrottle(request: Request): Promise<Response | null> {
+async function isThrottled(request: Request): Promise<boolean> {
+	const ip = getClientIp(request);
+	const cache = caches.default;
+	const key = new Request(`https://throttle/login/${encodeURIComponent(ip)}`, { method: 'GET' });
+	const cached = await cache.match(key);
+	if (!cached) return false;
+	const text = await cached.text();
+	const count = parseInt(text, 10) || 0;
+	return count >= 5;
+}
+
+async function recordFailedAttempt(request: Request): Promise<void> {
 	const ip = getClientIp(request);
 	const cache = caches.default;
 	const key = new Request(`https://throttle/login/${encodeURIComponent(ip)}`, { method: 'GET' });
@@ -35,17 +42,11 @@ async function checkLoginThrottle(request: Request): Promise<Response | null> {
 		const text = await cached.text();
 		count = parseInt(text, 10) || 0;
 	}
-	if (count >= 5) {
-		return errorJson('Too many login attempts, try again later', 429);
-	}
-	// Increment and store with 15-minute expiry
 	const next = String(count + 1);
 	const res = new Response(next, {
 		headers: { 'Cache-Control': 'max-age=900', 'content-type': 'text/plain' },
 	});
-	// Use put with cache key; workerd Cache API respects Cache-Control for expiry
 	await cache.put(key, res.clone());
-	return null;
 }
 
 async function requireUserAuth(request: Request, env: Env): Promise<Response | null> {
@@ -80,10 +81,11 @@ export default {
 			});
 		}
 
-		// Login — no auth, but throttled
+		// Login — no auth, but throttled (only failed passphrase checks count)
 		if (url.pathname === '/api/login' && request.method === 'POST') {
-			const throttled = await checkLoginThrottle(request);
-			if (throttled) return throttled;
+			if (await isThrottled(request)) {
+				return errorJson('Too many login attempts, try again later', 429);
+			}
 
 			let body: unknown;
 			try {
@@ -97,6 +99,7 @@ export default {
 			}
 			const ok = await constantTimeEqual(parsed.output.passphrase, env.SUGU_PASSPHRASE ?? '');
 			if (!ok) {
+				await recordFailedAttempt(request);
 				return errorJson('Wrong passphrase', 401);
 			}
 			const token = await signToken(env.TOKEN_SECRET);

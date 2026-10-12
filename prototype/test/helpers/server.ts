@@ -1,11 +1,21 @@
 import { spawn, type Subprocess } from 'bun';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer } from 'node:net';
 
-const DEFAULT_PORT = 8787;
 const HEALTH_PATH = '/api/health';
 
-function findFreePort(): number {
-	// Let OS assign a free port by binding to 0, or use 8787 if free
-	return DEFAULT_PORT;
+async function findFreePort(): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const srv = createServer();
+		srv.listen(0, '127.0.0.1', () => {
+			const addr = srv.address() as { port: number };
+			const port = addr.port;
+			srv.close(() => resolve(port));
+		});
+		srv.on('error', reject);
+	});
 }
 
 async function waitForHealth(base: string, timeoutMs = 15000): Promise<void> {
@@ -29,49 +39,52 @@ export type DevServer = {
 };
 
 export async function startDevServer(opts?: { port?: number }): Promise<DevServer> {
-	const port = opts?.port ?? DEFAULT_PORT;
+	const port = opts?.port ?? (await findFreePort());
 	const baseUrl = `http://127.0.0.1:${port}`;
 	const wsBaseUrl = `ws://127.0.0.1:${port}`;
 
-	// If already listening, reuse it
-	try {
-		const res = await fetch(`${baseUrl}${HEALTH_PATH}`, { signal: AbortSignal.timeout(1000) });
-		if (res.ok) {
-			return { baseUrl, wsBaseUrl, stop: async () => {} };
-		}
-	} catch {
-		// not listening — start one
-	}
+	const persistDir = await mkdtemp(join(tmpdir(), 'sugu-test-'));
 
 	const proc: Subprocess = spawn({
-		cmd: ['bunx', 'wrangler', 'dev', '--config', 'wrangler.jsonc', '--port', String(port)],
+		cmd: ['bunx', 'wrangler', 'dev', '--config', 'wrangler.jsonc', '--port', String(port), '--persist-to', persistDir],
 		cwd: '/home/node/Documents/GitHub/sugu/prototype',
 		env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
 		stdout: 'pipe',
 		stderr: 'pipe',
 	});
 
-	// Wait for health
 	try {
 		await waitForHealth(baseUrl, 20000);
 	} catch (e) {
 		try {
 			proc.kill();
 		} catch {}
+		await new Promise((r) => setTimeout(r, 500));
+		try {
+			proc.kill(9);
+		} catch {}
+		try {
+			await rm(persistDir, { recursive: true, force: true });
+		} catch {}
 		throw e;
 	}
 
+	let stopped = false;
 	return {
 		baseUrl,
 		wsBaseUrl,
 		stop: async () => {
+			if (stopped) return;
+			stopped = true;
 			try {
 				proc.kill();
 			} catch {}
-			// Give it a moment to exit
 			await new Promise((r) => setTimeout(r, 500));
 			try {
 				proc.kill(9);
+			} catch {}
+			try {
+				await rm(persistDir, { recursive: true, force: true });
 			} catch {}
 		},
 	};
