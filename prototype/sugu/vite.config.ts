@@ -13,6 +13,10 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter({ fallback: 'index.html' }),
+			alias: {
+				$lib: './src/lib',
+				'$lib/*': './src/lib/*'
+			},
 			// Not a SvelteKit option — SvelteKit forwards unknown options to
 			// vite-plugin-svelte, which is where `inspector` lives.
 			inspector: {
