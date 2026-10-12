@@ -1,13 +1,16 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { signToken } from '../src/server/auth';
+import { startDevServer, type DevServer } from './helpers/server';
 
-const BASE = 'http://127.0.0.1:8787';
-const WS_BASE = 'ws://127.0.0.1:8787';
+let BASE: string;
+let WS_BASE: string;
+let _server: DevServer;
 const SECRET = '4f0a1aa91ca3c4b6ff366f4d88d58c6348195877c4023149';
 
 function wsConnect(sessionId: string, token: string, since?: number): Promise<WebSocket> {
+	const tokenParam = `&token=${encodeURIComponent(token)}`;
 	return new Promise((resolve, reject) => {
-		const ws = new WebSocket(`${WS_BASE}/ws?sessionId=${encodeURIComponent(sessionId)}`);
+		const ws = new WebSocket(`${WS_BASE}/ws?sessionId=${encodeURIComponent(sessionId)}${tokenParam}`);
 		ws.addEventListener('open', () => {
 			const hello: Record<string, unknown> = { v: 1, t: 'hello', sessionId, token };
 			if (since !== undefined) hello['since'] = since;
@@ -67,23 +70,14 @@ function waitForFrames(
 	});
 }
 
-let healthOk = false;
-
 beforeAll(async () => {
-	// Verify wrangler dev is up
-	for (let i = 0; i < 10; i++) {
-		try {
-			const res = await fetch(`${BASE}/api/health`);
-			if (res.ok) {
-				healthOk = true;
-				break;
-			}
-		} catch {
-			// retry
-		}
-		await new Promise((r) => setTimeout(r, 500));
-	}
-	if (!healthOk) throw new Error('wrangler dev not reachable at ' + BASE);
+	_server = await startDevServer();
+	BASE = _server.baseUrl;
+	WS_BASE = _server.wsBaseUrl;
+});
+
+afterAll(async () => {
+	await _server.stop();
 });
 
 describe('session-cell integration', () => {
@@ -237,7 +231,7 @@ describe('session-cell integration', () => {
 
 		// Read snapshot via HTTP without waiting for stream to finish — goes through
 		// worker's /ws proxy to the same SessionCell (same sessionId → same DO)
-		const snapRes = await fetch(`${BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&__snapshot=1`);
+		const snapRes = await fetch(`${BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}&__snapshot=1`);
 		expect(snapRes.ok).toBe(true);
 		const rows = (await snapRes.json()) as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
 		// Should have user row + reserved assistant row (interrupted:true) even though turn not done
@@ -261,7 +255,7 @@ describe('session-cell integration', () => {
 		);
 
 		// After completion, the same row should be updated to interrupted:false with final text
-		const snapRes2 = await fetch(`${BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&__snapshot=1`);
+		const snapRes2 = await fetch(`${BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}&__snapshot=1`);
 		expect(snapRes2.ok).toBe(true);
 		const rows2 = (await snapRes2.json()) as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
 		expect(rows2.length).toBe(2);
@@ -277,8 +271,9 @@ describe('session-cell integration', () => {
 	test('hello with bad token gets err auth and close 1008', async () => {
 		const sessionId = `test-auth-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 		const badToken = await signToken('wrong-secret');
+		const validTokenForWs = await signToken(SECRET);
 
-		const ws = new WebSocket(`${WS_BASE}/ws`);
+		const ws = new WebSocket(`${WS_BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(validTokenForWs)}`);
 		let errFrame: Record<string, unknown> | null = null;
 		let closeCode: number | null = null;
 

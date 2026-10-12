@@ -84,6 +84,23 @@ export class SessionCell extends DurableObject<Env> {
 		return [...cursor] as unknown as { id: number; type: string; role: string | null; payload: string }[];
 	}
 
+	async probeWrite(count: number): Promise<number> {
+		const n = Math.floor(count);
+		if (n <= 0) return 0;
+		const ts = nowIso();
+		for (let i = 0; i < n; i++) {
+			this.ctx.storage.sql.exec(
+				'INSERT INTO events (ts, type, role, payload, meta) VALUES (?, ?, ?, ?, ?)',
+				ts,
+				'probe',
+				null,
+				JSON.stringify({ n: i }),
+				null,
+			);
+		}
+		return n;
+	}
+
 	async snapshotWithMeta(): Promise<{ id: number; type: string; role: string | null; payload: string; meta: string | null }[]> {
 		const cursor = this.ctx.storage.sql.exec('SELECT id, type, role, payload, meta FROM events ORDER BY id ASC');
 		return [...cursor] as unknown as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
