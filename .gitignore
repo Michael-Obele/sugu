@@ -3,6 +3,10 @@
 # plan/ copy here is the SOURCE OF TRUTH (see plan/README.md).
 plan/
 
+# SDD scratch workspace: task briefs, implementer reports, review packages and the
+# progress ledger. Working state for the agent, never part of the product.
+.superpowers/
+
 # Cloudflare local state and secrets — never commit
 .wrangler/
 .dev.vars
@@ -16,6 +20,8 @@ plan/
 dist/
 node_modules/
 *.tsbuildinfo
+# SvelteKit's generated output, at whatever level a sync happened to run.
+.svelte-kit/
 
 # Editor and OS noise
 .DS_Store
