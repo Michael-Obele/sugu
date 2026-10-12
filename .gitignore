@@ -1,0 +1,20 @@
+# Planning material stays local: it travels with this machine, not with git.
+# Seeded from AI-Plans/plans/sugu/ via plan-sync.sh --init; after seeding the
+# plan/ copy here is the SOURCE OF TRUTH (see plan/README.md).
+plan/
+
+# Cloudflare local state and secrets — never commit
+.wrangler/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+
+# Build and dependency output
+dist/
+node_modules/
+*.tsbuildinfo
+
+# Editor and OS noise
+.DS_Store
+*.log
