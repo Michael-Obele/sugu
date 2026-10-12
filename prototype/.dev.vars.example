@@ -1,0 +1,22 @@
+# Local secrets for `wrangler dev`. Copy this file to `.dev.vars` (gitignored) and fill it in.
+# Production values never live in a file: `bunx wrangler secret put <NAME>`.
+
+# Unlocks the PWA. Single user, so no usernames anywhere.
+SUGU_PASSPHRASE=
+
+# HMAC key used to sign session tokens. Long random string; rotating it logs the phone out.
+TOKEN_SECRET=
+
+# Separate token for /api/probe/* and /api/import. Local only.
+ADMIN_TOKEN=
+
+# Model providers (Phase 1).
+DEEPSEEK_API_KEY=
+OPENROUTER_API_KEY=
+
+# Remote MCP servers called from the Worker (Phase 1).
+SEPIA_TOKEN=
+EXA_API_KEY=
+
+# Fine-grained GitHub PAT: contents + pull-requests + actions (Phase 2).
+GITHUB_TOKEN=

@@ -1,0 +1,24 @@
+{
+	"name": "sugu",
+	"version": "0.0.0",
+	"private": true,
+	"workspaces": ["sugu"],
+	"scripts": {
+		"dev": "wrangler dev",
+		"build": "bun run --cwd sugu build",
+		"deploy": "bun run build && wrangler deploy",
+		"test": "bun test",
+		"check": "bun run --cwd sugu check",
+		"cf-typegen": "wrangler types",
+		"format": "prettier --write ."
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.5",
+		"prettier": "^3.9.10",
+		"typescript": "^5.5.2",
+		"wrangler": "^4.149.0"
+	},
+	"dependencies": {
+		"valibot": "^1.5.0"
+	}
+}

@@ -7,6 +7,8 @@ plan/
 .wrangler/
 .dev.vars
 .dev.vars.*
+# ...but the template that documents the secret NAMES is tracked.
+!.dev.vars.example
 .env
 .env.*
 
