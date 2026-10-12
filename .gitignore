@@ -15,6 +15,7 @@ plan/
 !.dev.vars.example
 .env
 .env.*
+!.env.example
 
 # Build and dependency output
 dist/

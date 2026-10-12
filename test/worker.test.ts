@@ -15,15 +15,17 @@ const SECRET = '4f0a1aa91ca3c4b6ff366f4d88d58c6348195877c4023149';
 const ADMIN = '16e9a1696278265e7d30700ceeb40ea16e3c32794e8507ce';
 const PASSPHRASE = 'dev-passphrase';
 
+// Bun runs test files in parallel and each integration file spawns its own `wrangler
+// dev`, so a cold start can take well past bun's 5s default hook budget.
 beforeAll(async () => {
 	server = await startDevServer();
 	BASE = server.baseUrl;
 	WS_BASE = server.wsBaseUrl;
-});
+}, 30_000);
 
 afterAll(async () => {
 	await server.stop();
-});
+}, 30_000);
 
 describe('worker edge', () => {
 	test('GET /api/health -> 200 and two pongs', async () => {

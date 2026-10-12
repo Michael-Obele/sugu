@@ -1,6 +1,6 @@
 export {};
 // Local quota-probe driver — walks CPU, rows-written, and request-rate limits against /api/probe/* and /api/health
-// Usage: bun --cwd /home/node/Documents/GitHub/sugu/prototype run scripts/quota-probe.ts [--target <url>] [--admin-token <t>] [--max <n>] [--dry-run]
+// Usage: bun run scripts/quota-probe.ts [--target <url>] [--admin-token <t>] [--max <n>] [--dry-run]
 // Never deploy, never run against anything but the URL you were given.
 // Local workerd limits are NOT production limits — do not record local numbers as free-tier facts.
 

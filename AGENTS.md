@@ -1,7 +1,7 @@
 # Sugu — agent notes
 
 Phone-first agent sessions on Cloudflare Free. The plan lives in `plan/` and is **not in
-git**; the code lives in `prototype/`.
+git**; the code lives at the repo root.
 
 ## Ground rules
 
@@ -20,18 +20,47 @@ git**; the code lives in `prototype/`.
 
 ## Layout
 
-| Path                              | What                                                     |
-| --------------------------------- | -------------------------------------------------------- |
-| `prototype/wrangler.jsonc`        | the deploy contract: assets binding + DO classes          |
-| `prototype/src/worker.ts`         | Worker entry: routing, auth, WS upgrade, assets fallback  |
-| `prototype/src/session-cell.ts`   | `SessionCell` DO — one per conversation, SQLite + WS      |
-| `prototype/src/meta-cell.ts`      | `MetaCell` DO — the session index                         |
-| `prototype/src/server/*`          | pure helpers: auth, models, mcp, github, skills           |
-| `prototype/src/shared/contracts.ts` | Valibot wire schemas shared with the SPA                |
-| `prototype/sugu/`                 | SvelteKit SPA (`adapter-static` → `sugu/build`)           |
-| `prototype/scripts/`              | local Bun scripts (quota probe, opencode import)          |
+| Path                        | What                                                    |
+| --------------------------- | ------------------------------------------------------- |
+| `wrangler.jsonc`            | the deploy contract: assets binding + DO classes         |
+| `src/worker.ts`             | Worker entry: routing, auth, WS upgrade, assets fallback |
+| `src/session-cell.ts`       | `SessionCell` DO — one per conversation, SQLite + WS     |
+| `src/meta-cell.ts`          | `MetaCell` DO — the session index                        |
+| `src/server/*`              | pure helpers: auth, http, probe                          |
+| `src/shared/contracts.ts`   | Valibot wire schemas shared with the SPA                 |
+| `sugu/`                     | SvelteKit SPA (`adapter-static` → `sugu/build`)          |
+| `scripts/`                  | local Bun scripts (quota probe, opencode import)         |
+| `test/`                     | `bun test`; integration tests start their own dev server |
 
 ## Files that must not exist
 
 `CLAUDE.md` and `.github/copilot-instructions.md`. `AGENTS.md` is the only
 agent-instruction file in this repo.
+
+## Cloudflare Workers
+
+STOP. Your knowledge of Cloudflare Workers APIs and limits may be outdated. Always retrieve
+current documentation before any Workers, KV, R2, D1, Durable Objects, Queues, Vectorize, AI
+or Agents SDK task.
+
+- Docs: <https://developers.cloudflare.com/workers/>
+- Docs MCP: `https://docs.mcp.cloudflare.com/mcp`
+- For all limits and quotas, read the product's `/platform/limits/` page, e.g.
+  `/workers/platform/limits`.
+- Durable Objects: <https://developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/>
+
+| Command                 | Purpose                  |
+| ----------------------- | ------------------------ |
+| `bun run dev`           | local dev (`wrangler dev`) |
+| `bun run deploy`        | build the SPA, then deploy |
+| `bun run cf-typegen`    | `wrangler types`         |
+
+Run `cf-typegen` after changing bindings in `wrangler.jsonc`. Note that a leading `cd` in a
+shell command can be dropped by some agent harnesses, so prefer `--cwd` (bun) and `--config`
+with an absolute path (wrangler) over relying on the working directory.
+
+**Local Explorer** — while `bun run dev` is running, the base URL printed at startup serves a
+Local Explorer API for inspecting bindings and storage: `/cdn-cgi/local/explorer/api/local/workers`,
+`.../storage/kv/namespaces`, `.../workers/durable_objects/namespaces`, and
+`POST .../local/observability/query` for read-only SQL (`SELECT`/`WITH`) over captured spans and
+logs. Fetch `GET /cdn-cgi/local/explorer/api` for the full OpenAPI schema (large; last resort).

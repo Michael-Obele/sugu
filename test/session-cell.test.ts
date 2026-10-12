@@ -70,15 +70,17 @@ function waitForFrames(
 	});
 }
 
+// See worker.test.ts: parallel files each start their own dev server, which needs
+// more than bun's 5s default hook budget.
 beforeAll(async () => {
 	_server = await startDevServer();
 	BASE = _server.baseUrl;
 	WS_BASE = _server.wsBaseUrl;
-});
+}, 30_000);
 
 afterAll(async () => {
 	await _server.stop();
-});
+}, 30_000);
 
 describe('session-cell integration', () => {
 	test('hello -> send ping -> token frames and final msg with matching seq', async () => {
