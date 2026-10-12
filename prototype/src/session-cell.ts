@@ -9,11 +9,15 @@ type EnvWithSecrets = Env & { TOKEN_SECRET: string };
 export class SessionCell extends DurableObject<Env> {
 	private busy = false;
 	private abortCtrl: AbortController | null = null;
-	// ponytail: token frames carry seq = MAX(id)+1 at turn start. This assumes
-	// nothing writes an event mid-turn; when tools land in Phase 1, reserve the
-	// row at turn start instead (ceiling: ~100k rows/day free tier).
+	// reservation: at turn start we INSERT the assistant row immediately with
+	// empty text and meta { interrupted: true } and capture its id as seq. Token
+	// frames and the final msg reuse that seq; on completion we UPDATE the same
+	// row (interrupted: false) so an eviction mid-stream still leaves a durable
+	// msg { interrupted: true } for replay. Row budget: user insert (1) +
+	// assistant reserve (1) + assistant update (1) = 3 writes/turn (limit 8).
 	private pendingSeq: number | null = null;
 	private pendingText = '';
+	private pendingAssistantId: number | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -80,7 +84,17 @@ export class SessionCell extends DurableObject<Env> {
 		return [...cursor] as unknown as { id: number; type: string; role: string | null; payload: string }[];
 	}
 
+	async snapshotWithMeta(): Promise<{ id: number; type: string; role: string | null; payload: string; meta: string | null }[]> {
+		const cursor = this.ctx.storage.sql.exec('SELECT id, type, role, payload, meta FROM events ORDER BY id ASC');
+		return [...cursor] as unknown as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
+	}
+
 	async fetch(request: Request): Promise<Response> {
+		const url = new URL(request.url);
+		if (url.searchParams.get('__snapshot') === '1') {
+			const rows = await this.snapshotWithMeta();
+			return Response.json(rows);
+		}
 		const upgrade = request.headers.get('Upgrade');
 		if (upgrade !== 'websocket') {
 			return new Response('expected websocket', { status: 426 });
@@ -181,10 +195,22 @@ export class SessionCell extends DurableObject<Env> {
 			JSON.stringify({ text: frame.text }),
 			null,
 		);
-		// Determine seq for the assistant row that will be persisted
-		const maxRow = this.ctx.storage.sql.exec('SELECT MAX(id) as maxId FROM events').one() as unknown as { maxId: number | null };
-		const nextSeq = (maxRow.maxId ?? 0) + 1;
+		// Reserve assistant row immediately with empty text and interrupted:true.
+		// This makes the interruption durable: if the DO is evicted mid-stream
+		// the row survives and replays as msg { interrupted: true }.
+		const reserveTs = nowIso();
+		this.ctx.storage.sql.exec(
+			'INSERT INTO events (ts, type, role, payload, meta) VALUES (?, ?, ?, ?, ?)',
+			reserveTs,
+			'assistant',
+			'assistant',
+			JSON.stringify({ text: '' }),
+			JSON.stringify({ interrupted: true }),
+		);
+		const reserved = this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number };
+		const nextSeq = reserved.id;
 		this.pendingSeq = nextSeq;
+		this.pendingAssistantId = nextSeq;
 		this.pendingText = '';
 
 		// Stream echo as token frames (Phase 0: echo)
@@ -198,29 +224,29 @@ export class SessionCell extends DurableObject<Env> {
 			if (signal.aborted) break;
 			this.pendingText += chunk;
 			ws.send(JSON.stringify({ v: 1, t: 'token', seq: nextSeq, delta: chunk }));
+			// deliberate exception to the 'no timers in the DO' rule: armed only
+			// while a turn is in flight, so it cannot block idle hibernation;
+			// removing it makes cancel and busy-rejection unreachable because the
+			// chunk loop would never yield to the DO message queue and
+			// webSocketMessage for cancel/second send could never be dispatched.
 			await new Promise<void>((resolve) => setTimeout(resolve, 5));
 			if (signal.aborted) break;
 		}
 
 		if (signal.aborted) {
-			// Persist partial as interrupted
-			const interruptedTs = nowIso();
+			// Update reserved row with partial text, still interrupted
 			this.ctx.storage.sql.exec(
-				'INSERT INTO events (ts, type, role, payload, meta) VALUES (?, ?, ?, ?, ?)',
-				interruptedTs,
-				'assistant',
-				'assistant',
-				JSON.stringify({ text: this.pendingText, interrupted: true }),
-				null,
+				'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
+				JSON.stringify({ text: this.pendingText }),
+				JSON.stringify({ interrupted: true }),
+				this.pendingAssistantId,
 			);
-			// Notify client of interrupted msg
-			const row = this.ctx.storage.sql.exec('SELECT id FROM events ORDER BY id DESC LIMIT 1').one() as unknown as { id: number };
 			ws.send(
 				JSON.stringify({
 					v: 1,
 					t: 'msg',
-					seq: row.id,
-					id: row.id,
+					seq: this.pendingAssistantId,
+					id: this.pendingAssistantId,
 					role: 'assistant',
 					text: this.pendingText,
 					interrupted: true,
@@ -230,27 +256,24 @@ export class SessionCell extends DurableObject<Env> {
 			this.busy = false;
 			this.pendingSeq = null;
 			this.pendingText = '';
+			this.pendingAssistantId = null;
 			this.abortCtrl = null;
 			return;
 		}
 
-		// Persist final assistant message
-		const assistantTs = nowIso();
+		// Update reserved row with final text, interrupted:false
 		this.ctx.storage.sql.exec(
-			'INSERT INTO events (ts, type, role, payload, meta) VALUES (?, ?, ?, ?, ?)',
-			assistantTs,
-			'assistant',
-			'assistant',
+			'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
 			JSON.stringify({ text: echoText }),
-			null,
+			JSON.stringify({ interrupted: false }),
+			this.pendingAssistantId,
 		);
-		const row = this.ctx.storage.sql.exec('SELECT id FROM events ORDER BY id DESC LIMIT 1').one() as unknown as { id: number };
 		ws.send(
 			JSON.stringify({
 				v: 1,
 				t: 'msg',
-				seq: row.id,
-				id: row.id,
+				seq: this.pendingAssistantId,
+				id: this.pendingAssistantId,
 				role: 'assistant',
 				text: echoText,
 			}),
@@ -259,20 +282,16 @@ export class SessionCell extends DurableObject<Env> {
 		this.busy = false;
 		this.pendingSeq = null;
 		this.pendingText = '';
+		this.pendingAssistantId = null;
 		this.abortCtrl = null;
 	}
 
-	private async handleCancel(ws: WebSocket): Promise<void> {
+	private async handleCancel(_ws: WebSocket): Promise<void> {
 		if (!this.busy || !this.abortCtrl) return;
 		this.abortCtrl.abort();
-		// The handleSend loop will detect abort and persist interrupted
-		// We also handle the case where abort happens before any token
-		void ws;
 	}
 
 	private buildStateFrame(): Frame {
-		const todos: Frame[] = [];
-		void todos;
 		const cursor = this.ctx.storage.sql.exec('SELECT id, text, status, pos FROM todos ORDER BY pos ASC');
 		const todoList: { id: number; text: string; status: 'open' | 'done' | 'dropped'; pos: number }[] = [];
 		for (const row of cursor) {
@@ -311,7 +330,17 @@ function eventRowToFrame(row: {
 				role: row.role ?? 'user',
 				text: payload['text'] ?? '',
 			};
-			if (payload['interrupted']) msg['interrupted'] = true;
+			let interrupted = payload['interrupted'];
+			if (row.meta) {
+				try {
+					const meta = JSON.parse(row.meta) as Record<string, unknown>;
+					if (meta['interrupted'] === true) interrupted = true;
+					if (meta['interrupted'] === false) interrupted = false;
+				} catch {
+					// ignore malformed meta
+				}
+			}
+			if (interrupted) msg['interrupted'] = true;
 			return msg;
 		}
 		case 'tool': {

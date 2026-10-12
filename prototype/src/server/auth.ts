@@ -80,11 +80,14 @@ export async function verifyToken(token: string, secret: string, now?: number): 
 	return { ok: true, iat: body.i };
 }
 
-export function constantTimeEqual(a: string, b: string): boolean {
-	if (a.length !== b.length) return false;
+export async function constantTimeEqual(a: string, b: string): Promise<boolean> {
+	const enc = new TextEncoder();
+	const [ha, hb] = await Promise.all([crypto.subtle.digest('SHA-256', enc.encode(a)), crypto.subtle.digest('SHA-256', enc.encode(b))]);
+	const ba = new Uint8Array(ha);
+	const bb = new Uint8Array(hb);
 	let diff = 0;
-	for (let i = 0; i < a.length; i++) {
-		diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	for (let i = 0; i < ba.length; i++) {
+		diff |= ba[i]! ^ bb[i]!;
 	}
 	return diff === 0;
 }

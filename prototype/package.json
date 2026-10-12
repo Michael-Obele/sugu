@@ -13,6 +13,7 @@
 		"format": "prettier --write ."
 	},
 	"devDependencies": {
+		"@types/bun": "^1.4.2",
 		"@types/node": "^26.6.5",
 		"prettier": "^3.9.10",
 		"typescript": "^5.5.2",

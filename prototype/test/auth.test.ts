@@ -73,16 +73,22 @@ describe('auth', () => {
 		if (!result.ok) expect(result.reason).toBe('malformed');
 	});
 
-	test('constantTimeEqual true for equal strings', () => {
-		expect(constantTimeEqual('hello', 'hello')).toBe(true);
-		expect(constantTimeEqual('', '')).toBe(true);
-		expect(constantTimeEqual('a', 'a')).toBe(true);
+	test('constantTimeEqual true for equal strings', async () => {
+		expect(await constantTimeEqual('hello', 'hello')).toBe(true);
+		expect(await constantTimeEqual('', '')).toBe(true);
+		expect(await constantTimeEqual('a', 'a')).toBe(true);
 	});
 
-	test('constantTimeEqual false for different strings', () => {
-		expect(constantTimeEqual('hello', 'world')).toBe(false);
-		expect(constantTimeEqual('hello', 'hella')).toBe(false);
-		expect(constantTimeEqual('hello', 'hello!')).toBe(false);
-		expect(constantTimeEqual('', 'a')).toBe(false);
+	test('constantTimeEqual false for different strings', async () => {
+		expect(await constantTimeEqual('hello', 'world')).toBe(false);
+		expect(await constantTimeEqual('hello', 'hella')).toBe(false);
+		expect(await constantTimeEqual('hello', 'hello!')).toBe(false);
+		expect(await constantTimeEqual('', 'a')).toBe(false);
+	});
+
+	test('constantTimeEqual different-length wrong passphrase still fails cleanly', async () => {
+		// Length leak would be visible if early-return on length; hashed compare must still return false
+		expect(await constantTimeEqual('short', 'a-much-longer-passphrase-value')).toBe(false);
+		expect(await constantTimeEqual('', 'non-empty')).toBe(false);
 	});
 });

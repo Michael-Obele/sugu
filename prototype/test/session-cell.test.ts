@@ -7,7 +7,7 @@ const SECRET = '4f0a1aa91ca3c4b6ff366f4d88d58c6348195877c4023149';
 
 function wsConnect(sessionId: string, token: string, since?: number): Promise<WebSocket> {
 	return new Promise((resolve, reject) => {
-		const ws = new WebSocket(`${WS_BASE}/ws`);
+		const ws = new WebSocket(`${WS_BASE}/ws?sessionId=${encodeURIComponent(sessionId)}`);
 		ws.addEventListener('open', () => {
 			const hello: Record<string, unknown> = { v: 1, t: 'hello', sessionId, token };
 			if (since !== undefined) hello['since'] = since;
@@ -219,6 +219,56 @@ describe('session-cell integration', () => {
 		);
 		const interrupted = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['interrupted'] === true);
 		expect(interrupted).toBeDefined();
+
+		ws.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+
+	test('reservation exists before turn completes and is updated after', async () => {
+		const sessionId = `test-reserve-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+		const ws = await wsConnect(sessionId, token);
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		// Send a long message so the turn takes a moment (many 8-char chunks * 5ms each)
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'b'.repeat(200) }));
+		// Wait for first token frame — proves the turn started and reservation is durable
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'token'), 3000);
+
+		// Read snapshot via HTTP without waiting for stream to finish — goes through
+		// worker's /ws proxy to the same SessionCell (same sessionId → same DO)
+		const snapRes = await fetch(`${BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&__snapshot=1`);
+		expect(snapRes.ok).toBe(true);
+		const rows = (await snapRes.json()) as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
+		// Should have user row + reserved assistant row (interrupted:true) even though turn not done
+		expect(rows.length).toBe(2);
+		expect(rows[0]!.type).toBe('user');
+		expect(rows[1]!.type).toBe('assistant');
+		const meta1 = rows[1]!.meta ? JSON.parse(rows[1]!.meta) : {};
+		expect(meta1.interrupted).toBe(true);
+
+		// Wait for turn to complete
+		await waitForFrames(
+			ws,
+			(frames) =>
+				frames.some(
+					(f) =>
+						f['t'] === 'msg' &&
+						typeof (f as Record<string, unknown>)['text'] === 'string' &&
+						((f as Record<string, unknown>)['text'] as string).startsWith('echo: b'),
+				),
+			5000,
+		);
+
+		// After completion, the same row should be updated to interrupted:false with final text
+		const snapRes2 = await fetch(`${BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&__snapshot=1`);
+		expect(snapRes2.ok).toBe(true);
+		const rows2 = (await snapRes2.json()) as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
+		expect(rows2.length).toBe(2);
+		expect(rows2[1]!.id).toBe(rows[1]!.id); // same row, updated
+		expect(JSON.parse(rows2[1]!.payload).text).toBe('echo: ' + 'b'.repeat(200));
+		const meta2 = rows2[1]!.meta ? JSON.parse(rows2[1]!.meta) : {};
+		expect(meta2.interrupted).toBe(false);
 
 		ws.close();
 		await new Promise((r) => setTimeout(r, 200));
