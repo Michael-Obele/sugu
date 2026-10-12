@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	import { createAnnouncer } from '$lib/announce';
 
 	type Props = {
 		role: 'user' | 'assistant' | 'system';
@@ -12,52 +13,27 @@
 	let { role, text, streaming = false, interrupted = false, onRerun }: Props = $props();
 
 	let isUser = $derived(role === 'user');
+
+	// Throttled aria-live: announce at most once per second, trailing flush ensures
+	// final content is always announced. Pure helper owns the timer.
+	// Driven via a render-time function (no $effect for state sync).
+	const announcer = createAnnouncer(1000);
 	let announceText = $state('');
-	let lastAnnounce = $state(0);
-	let pendingAnnounce: string | null = null;
-	let announceTimer: ReturnType<typeof setTimeout> | null = null;
+	let prevText = $state('');
+	let prevStreaming = $state<boolean | undefined>(undefined);
 
-	function flushAnnounce(): void {
-		if (pendingAnnounce !== null) {
-			announceText = pendingAnnounce;
-			pendingAnnounce = null;
-			lastAnnounce = Date.now();
-		}
-		if (announceTimer !== null) {
-			clearTimeout(announceTimer);
-			announceTimer = null;
-		}
-	}
-
-	function scheduleAnnounce(next: string): void {
-		const now = Date.now();
-		if (now - lastAnnounce >= 1000) {
-			announceText = next;
-			lastAnnounce = now;
-			pendingAnnounce = null;
-			if (announceTimer !== null) {
-				clearTimeout(announceTimer);
-				announceTimer = null;
-			}
-		} else {
-			pendingAnnounce = next;
-			if (announceTimer === null) {
-				const delay = 1000 - (now - lastAnnounce);
-				announceTimer = setTimeout(flushAnnounce, delay);
-			}
-		}
-	}
-
-	$effect(() => {
-		const currentText = text;
-		const isStreaming = streaming;
+	function updateAnnounce(currentText: string, isStreaming: boolean): string {
+		if (currentText === prevText && isStreaming === prevStreaming) return announceText;
+		prevText = currentText;
+		prevStreaming = isStreaming;
 		if (!isStreaming) {
-			flushAnnounce();
-			if (currentText !== announceText) announceText = currentText;
-			return;
+			announcer.flush();
+			announceText = currentText;
+		} else {
+			announceText = announcer.throttled(currentText);
 		}
-		scheduleAnnounce(currentText);
-	});
+		return announceText;
+	}
 </script>
 
 <div class={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
@@ -66,14 +42,10 @@
 			'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
 			isUser ? 'bg-primary text-primary-foreground' : 'border bg-card text-foreground',
 			interrupted && 'border-dashed border-warning/50',
-			streaming && 'animate-pulse'
+			streaming && 'streaming'
 		)}
-		aria-live={streaming ? 'polite' : undefined}
-		aria-atomic="true"
 	>
-		{#if streaming}
-			<span class="sr-only">{announceText}</span>
-		{/if}
+		<span class="sr-only" aria-live="polite" aria-atomic="true">{updateAnnounce(text, streaming)}</span>
 		<p class="break-words whitespace-pre-wrap">{text}</p>
 		{#if interrupted}
 			<div class="mt-2 flex items-center gap-2">

@@ -175,4 +175,32 @@ describe('frames', () => {
 		state = applyFrame(state, stateFrame);
 		expect(state.busy).toBe(true);
 	});
+
+	test('err frames are surfaced in errs (not dropped)', () => {
+		let state = initialFrameState();
+		expect(state.errs.length).toBe(0);
+		const errFrame = { v: 1, t: 'err', code: 'model', message: 'provider hiccup' } as Frame;
+		state = applyFrame(state, errFrame);
+		expect(state.errs.length).toBe(1);
+		expect(state.errs[0]!.code).toBe('model');
+		expect(state.errs[0]!.message).toBe('provider hiccup');
+		// errs capped at 10
+		for (let i = 0; i < 15; i++) {
+			state = applyFrame(state, { v: 1, t: 'err', code: 'quota', message: `err ${i}` } as Frame);
+		}
+		expect(state.errs.length).toBe(10);
+	});
+
+	test('quota err is surfaced', () => {
+		let state = initialFrameState();
+		state = applyFrame(state, { v: 1, t: 'err', code: 'quota', message: 'daily cap reached' } as Frame);
+		expect(state.errs[0]!.code).toBe('quota');
+	});
+
+	test('busy err is surfaced', () => {
+		let state = initialFrameState();
+		state = applyFrame(state, { v: 1, t: 'err', code: 'busy', message: 'already busy' } as Frame);
+		expect(state.errs[0]!.code).toBe('busy');
+	});
+
 });

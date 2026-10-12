@@ -6,12 +6,20 @@ import { SuguSocket, type ConnectionState } from './socket';
 import type { Frame } from '../../../src/shared/contracts';
 import { getToken } from './api';
 
+export type PendingSend = {
+	id: string;
+	text: string;
+	status: 'pending' | 'sent' | 'failed';
+	error?: string;
+};
+
 export class SessionStore {
 	token = $state<string | null>(null);
 	sessionId = $state<string | null>(null);
 	frameState = $state<FrameState>(initialFrameState());
 	connection = $state<ConnectionState>('closed');
 	error = $state<string | null>(null);
+	pendingSends = $state<PendingSend[]>([]);
 
 	private socket: SuguSocket | null = null;
 	private pendingText: string | null = null;
@@ -19,6 +27,7 @@ export class SessionStore {
 	busy = $derived(this.frameState.busy);
 	messages = $derived(this.frameState.messages);
 	tools = $derived(this.frameState.tools);
+	errs = $derived(this.frameState.errs);
 
 	constructor() {
 		if (typeof localStorage !== 'undefined') {
@@ -31,6 +40,7 @@ export class SessionStore {
 		if (isNewSession) {
 			this.frameState = initialFrameState();
 			this.error = null;
+			this.pendingSends = [];
 		}
 		this.disconnect();
 		this.sessionId = sessionId;
@@ -50,14 +60,29 @@ export class SessionStore {
 			onFrame: (frame: Frame) => {
 				if (frame.t === 'err') {
 					this.error = frame.message;
-					if (frame.code === 'busy' && this.pendingText && onBusyError) {
-						onBusyError(this.pendingText);
+					// Mark pending as failed for retry
+					if (this.pendingText) {
+						const id = crypto.randomUUID();
+						this.pendingSends = [
+							...this.pendingSends,
+							{ id, text: this.pendingText, status: 'failed', error: frame.message }
+						];
+						if (frame.code === 'busy' && onBusyError) {
+							onBusyError(this.pendingText);
+						}
 					}
 					this.pendingText = null;
+					this.frameState = applyFrame(this.frameState, frame);
 					return;
 				}
 				if (frame.t === 'msg' && frame.role === 'assistant' && !frame.interrupted) {
 					this.pendingText = null;
+				}
+				// Any user msg echo marks pending as sent
+				if (frame.t === 'msg' && frame.role === 'user') {
+					this.pendingSends = this.pendingSends.map((p) =>
+						p.text === frame.text && p.status === 'pending' ? { ...p, status: 'sent' as const } : p
+					);
 				}
 				this.frameState = applyFrame(this.frameState, frame);
 			},
@@ -87,9 +112,22 @@ export class SessionStore {
 			return;
 		}
 		this.pendingText = text;
+		const id = crypto.randomUUID();
+		this.pendingSends = [...this.pendingSends, { id, text, status: 'pending' }];
 		if (this.socket) {
 			this.socket.sendText(text);
 		}
+	}
+
+	retryPending(id: string): void {
+		const entry = this.pendingSends.find((p) => p.id === id);
+		if (!entry) return;
+		this.pendingSends = this.pendingSends.filter((p) => p.id !== id);
+		this.send(entry.text);
+	}
+
+	dismissPending(id: string): void {
+		this.pendingSends = this.pendingSends.filter((p) => p.id !== id);
 	}
 
 	cancel(): void {
@@ -101,6 +139,7 @@ export class SessionStore {
 		this.frameState = initialFrameState();
 		this.sessionId = null;
 		this.error = null;
+		this.pendingSends = [];
 	}
 }
 

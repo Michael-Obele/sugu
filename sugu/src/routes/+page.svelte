@@ -64,9 +64,15 @@
 
 	<main class="flex-1">
 		{#if loading}
-			<p class="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+			<div class="flex flex-col items-center gap-3 py-12">
+				<div class="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" aria-hidden="true"></div>
+				<p class="text-sm text-muted-foreground">Loading sessions\u2026</p>
+			</div>
 		{:else if error}
-			<p class="py-8 text-center text-sm text-destructive">{error}</p>
+			<div class="mx-4 mt-4 rounded-xl border border-destructive/50 bg-destructive/10 p-4">
+				<p class="text-sm text-destructive">{error}</p>
+				<button type="button" onclick={() => location.reload()} class="mt-2 min-h-[44px] rounded-md border bg-card px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">Retry</button>
+			</div>
 		{:else}
 			<SessionList {sessions} onSelect={handleSelect} onNew={handleNew} />
 		{/if}

@@ -22,9 +22,16 @@ export type ToolEntry = {
 	summary?: string;
 };
 
+export type ErrEntry = {
+	code: string;
+	message: string;
+	at: number;
+};
+
 export type FrameState = {
 	messages: DisplayMessage[];
 	tools: ToolEntry[];
+	errs: ErrEntry[];
 	busy: boolean;
 	model: string;
 	ignoredCount: number;
@@ -37,7 +44,7 @@ export type FrameState = {
  * - msg: replaces/places by seq (last persisted text wins)
  * - tool: upsert by runId
  * - state: updates busy/model
- * - err: ignored for display (surfaced elsewhere)
+ * - err: appended to errs (surfaced in chat)
  */
 export function applyFrame(state: FrameState, frame: Frame): FrameState {
 	switch (frame.t) {
@@ -107,7 +114,9 @@ export function applyFrame(state: FrameState, frame: Frame): FrameState {
 			return { ...state, busy: frame.busy, model: frame.model };
 		}
 		case 'err': {
-			return state;
+			const entry: ErrEntry = { code: frame.code, message: frame.message, at: Date.now() };
+			const next = [...state.errs, entry].slice(-10);
+			return { ...state, errs: next };
 		}
 		default: {
 			// Unknown inbound frame — ignore and count
@@ -120,6 +129,7 @@ export function initialFrameState(): FrameState {
 	return {
 		messages: [],
 		tools: [],
+		errs: [],
 		busy: false,
 		model: 'deepseek-chat',
 		ignoredCount: 0

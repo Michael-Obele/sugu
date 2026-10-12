@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Sugu">
+  <rect width="32" height="32" rx="7" fill="#0a0a0a"/>
+  <rect x="1" y="1" width="30" height="30" rx="6" fill="none" stroke="#2a2a2a" stroke-width="1"/>
+  <!-- speech bubble with tail, minimal -->
+  <path d="M8 10.5 h16 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-10 l-4 3.2 v-3.2 h-2 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2 z" fill="#e8e8e8"/>
+  <!-- two lines inside bubble -->
+  <rect x="12" y="14.5" width="10" height="1.6" rx="0.8" fill="#0a0a0a" opacity="0.85"/>
+  <rect x="12" y="17.5" width="7" height="1.6" rx="0.8" fill="#0a0a0a" opacity="0.45"/>
+</svg>

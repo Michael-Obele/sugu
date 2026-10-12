@@ -15,7 +15,6 @@
 	let pendingSend = $state<string | null>(null);
 	let lastConnectedId: string | null = null;
 
-
 	function doConnect(id: string): void {
 		if (!id) return;
 		if (lastConnectedId === id) return;
@@ -59,7 +58,6 @@
 	});
 
 	afterNavigate(() => {
-		// Handle rapid navigation between sessions without $effect
 		const id = page.params['id'] ?? '';
 		if (id && id !== lastConnectedId) {
 			doConnect(id);
@@ -82,6 +80,18 @@
 	function handleRerun(text: string): void {
 		handleSend(text);
 	}
+
+	function handleRetryPending(id: string): void {
+		sessionStore.retryPending(id);
+	}
+
+	function handleDismissPending(id: string): void {
+		sessionStore.dismissPending(id);
+	}
+
+	let connectionLabel = $derived(
+		sessionStore.connection === 'open' ? 'Connected' : sessionStore.connection === 'reconnecting' ? 'Reconnecting' : sessionStore.connection === 'connecting' ? 'Connecting' : 'Offline'
+	);
 </script>
 
 <div class="flex h-dvh flex-col bg-background">
@@ -100,21 +110,24 @@
 			class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md px-2 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 			aria-label="Back to sessions"
 		>
-			←
+			\u2190
 		</a>
 		<span class="flex-1 truncate text-sm font-medium">{sessionId.slice(0, 8)}</span>
-		<span class="text-xs text-muted-foreground">
-			{sessionStore.connection === 'open' ? '●' : '○'}
+		<span class="flex items-center gap-1.5 text-xs {sessionStore.connection === 'open' ? 'text-emerald-500' : sessionStore.connection === 'reconnecting' ? 'text-warning' : 'text-muted-foreground'}" aria-label={connectionLabel} title={connectionLabel}>
+			<span class="h-2 w-2 rounded-full {sessionStore.connection === 'open' ? 'bg-emerald-500' : sessionStore.connection === 'reconnecting' ? 'bg-warning animate-pulse' : 'bg-muted-foreground'}" aria-hidden="true"></span>
+			{connectionLabel}
 		</span>
 	</header>
 
-	<div class="flex-1 overflow-y-auto">
-		<MessageList
-			messages={sessionStore.messages}
-			tools={sessionStore.tools}
-			onRerun={handleRerun}
-		/>
-	</div>
+	<MessageList
+		messages={sessionStore.messages}
+		tools={sessionStore.tools}
+		errs={sessionStore.errs}
+		pendingSends={sessionStore.pendingSends}
+		onRerun={handleRerun}
+		onRetryPending={handleRetryPending}
+		onDismissPending={handleDismissPending}
+	/>
 
 	<Composer
 		bind:value={composerText}

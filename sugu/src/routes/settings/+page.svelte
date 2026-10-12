@@ -16,7 +16,6 @@
 		} catch {
 			// ignore
 		}
-		// Fetch quota (best-effort)
 		try {
 			const token = getToken();
 			if (token) {
@@ -28,7 +27,7 @@
 					.catch(() => {
 						quotaError = 'quota unavailable';
 					});
-			}
+		}
 		} catch {
 			// ignore
 		}
@@ -55,7 +54,7 @@
 			class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md px-2 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 			aria-label="Back"
 		>
-			←
+			\u2190
 		</a>
 		<h1 class="text-lg font-semibold">Settings</h1>
 	</header>
@@ -69,8 +68,8 @@
 
 		{#if quota}
 			<div class="rounded-xl border p-4">
-				<p class="text-sm font-medium">Quota — {quota.day}</p>
-				<p class="text-sm text-muted-foreground">Turns: {quota.turns} · Prompt: {quota.prompt_t} · Completion: {quota.compl_t} · Cost: ${quota.cost_usd.toFixed(4)}</p>
+				<p class="text-sm font-medium">Quota \u2014 {quota.day}</p>
+				<p class="text-sm text-muted-foreground">Turns: {quota.turns} \u00b7 Prompt: {quota.prompt_t} \u00b7 Completion: {quota.compl_t} \u00b7 Cost: ${quota.cost_usd.toFixed(4)}</p>
 			</div>
 		{:else if quotaError}
 			<div class="rounded-xl border border-dashed p-4">
@@ -78,7 +77,7 @@
 			</div>
 		{:else}
 			<div class="rounded-xl border border-dashed p-4">
-				<p class="text-sm text-muted-foreground">Quota — loading…</p>
+				<p class="text-sm text-muted-foreground">Quota \u2014 loading\u2026</p>
 			</div>
 		{/if}
 
