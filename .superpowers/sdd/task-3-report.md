@@ -222,3 +222,77 @@ Not changed: `test/helpers/server.ts` (wrangler bin shim under node is load-bear
 ### Concerns
 
 - None for this fix. The `SELECT last_insert_rowid()` read is safe here because it runs synchronously on the same DO storage connection immediately after the user `INSERT` and before the assistant reserve `INSERT`, so it returns the user row id.
+---
+
+## Fix — composer stuck busy after turn (2026-10-12)
+
+### Bug
+
+Send one message, let the turn finish, and the composer stays disabled forever ("Waiting for response…" with Stop). Only a reload recovers because reload's `hello` gets a fresh `state` frame. Cause: in `src/session-cell.ts` both turn-ending paths sent the state frame before clearing the busy flag, so the frame carried `busy: true`:
+
+```ts
+ws.send(JSON.stringify(this.buildStateFrame())); // reads this.busy, still true
+this.busy = false;                               // cleared too late
+```
+
+`buildStateFrame()` reads `this.busy` and the client disables its composer from that frame — so the last word the client hears about busy is `true`. Two places had the same ordering bug: the normal completion path (after the final assistant `msg`) and the `if (signal.aborted)` cancel path.
+
+### Fix
+
+Clear the flag before the frame is built and sent, in both paths. Turn state (`pendingSeq`, `pendingText`, `pendingAssistantId`, `abortCtrl`) is cleared with it. Order now reads: finish the row → send the final `msg` → clear busy and turn state → send the state frame. Nothing observes a half-finished turn.
+
+Diff (`src/session-cell.ts`):
+
+```ts
+// cancel path — before:
+ws.send(JSON.stringify({ v: 1, t: 'msg', ...interrupted: true }));
+ws.send(JSON.stringify(this.buildStateFrame()));
+this.busy = false; this.pendingSeq = null; ...
+// after:
+ws.send(JSON.stringify({ v: 1, t: 'msg', ...interrupted: true }));
+this.busy = false; this.pendingSeq = null; ... this.abortCtrl = null;
+ws.send(JSON.stringify(this.buildStateFrame()));
+
+// normal path — before:
+ws.send(JSON.stringify({ v: 1, t: 'msg', ...text: echoText }));
+ws.send(JSON.stringify(this.buildStateFrame()));
+this.busy = false; ...
+// after:
+ws.send(JSON.stringify({ v: 1, t: 'msg', ...text: echoText }));
+this.busy = false; ... this.abortCtrl = null;
+ws.send(JSON.stringify(this.buildStateFrame()));
+```
+
+Not changed: row reservation logic, `setTimeout` yield, streams — deliberate and separately justified in surrounding comments.
+
+### Tests — why the suite missed it
+
+`test/session-cell.test.ts` asserted the busy *rejection* path (second `send` while busy errors) and `test/frames.test.ts` asserted the *reducer* handles `busy`. Nothing asserted that a completed turn ever says `busy: false` again, so the two halves were both tested and the join was not.
+
+Added in `test/session-cell.test.ts`:
+
+- `completed turn ends with state { busy: false }` — asserts on the last state frame received, not merely that some state arrived.
+- `cancelled turn ends with state { busy: false }` — same for the cancel path.
+- `after turn completes second send is accepted` — user-facing: after a turn completes, a second `send` is accepted and produces its own output rather than `err { code: 'busy' }`.
+
+### Verify — real output
+
+```bash
+bun tsc --noEmit
+# (no output, exit 0)
+
+bun test
+# Run 1: 70 pass, 0 fail, 191 expect() calls, 6 files [8.71s]
+# Run 2: 70 pass, 0 fail, 191 expect() calls, 6 files [9.06s]
+
+bunx prettier --write src/session-cell.ts test/session-cell.test.ts
+# src/session-cell.ts 206ms (unchanged)
+# test/session-cell.test.ts 156ms (unchanged)
+```
+
+Not changed: `test/helpers/server.ts` (wrangler bin shim under node is load-bearing). Not deployed.
+
+### Concerns
+
+- None for this fix. The ordering change is the minimal correct fix and both paths now follow the same clear-then-frame sequence.
+
