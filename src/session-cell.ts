@@ -157,7 +157,7 @@ export class SessionCell extends DurableObject<Env> {
 				// no-op for now
 				break;
 			case 'approve':
-				// Phase 2 — acknowledge but no-op
+				// Phase 2 -- acknowledge but no-op
 				break;
 			default:
 				// Server frames sent by client are bad_frame
@@ -218,6 +218,18 @@ export class SessionCell extends DurableObject<Env> {
 			JSON.stringify({ text: frame.text }),
 			null,
 		);
+		// Emit the same msg frame replay would produce -- one event, one shape, both paths.
+		{
+			const userRowId = (this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }).id;
+			const userFrame = eventRowToFrame({
+				id: userRowId,
+				type: 'user',
+				role: 'user',
+				payload: JSON.stringify({ text: frame.text }),
+				meta: null,
+			});
+			if (userFrame) ws.send(JSON.stringify(userFrame));
+		}
 		// Reserve assistant row immediately with empty text and interrupted:true.
 		// This makes the interruption durable: if the DO is evicted mid-stream
 		// the row survives and replays as msg { interrupted: true }.

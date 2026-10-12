@@ -157,3 +157,68 @@ bun run --cwd sugu build
 
 Do not deploy — not deployed.
 
+
+---
+
+## Fix — live user message not displayed (2026-10-12)
+
+### Bug
+
+Send a message: composer cleared, assistant echo streamed, but the user's own message never appeared until reload. Reload triggered `hello{since}` replay and the replayed `user` event came back as `msg { role: 'user' }`, so persisted row and replay were correct — only the live turn was missing the frame.
+
+Cause: `src/session-cell.ts:handleSend` inserted the `user` event row but never sent a `msg { role: 'user' }` frame during the live turn. Only `role: 'assistant'` frames were sent live. `eventRowToFrame` produced the user msg only on replay, so the same event had two divergent paths.
+
+### Fix
+
+In `handleSend`, immediately after the `INSERT` for the `user` row, capture `last_insert_rowid()` and emit the same `msg` frame replay would produce via the existing `eventRowToFrame` mapping — same `seq`, same `id`, same `text`, `role: 'user'`.
+
+- No extra row writes: `SELECT last_insert_rowid()` is a read, not a write. Budget stays at 3 writes/turn (user insert + assistant reserve + assistant update, limit 8).
+- `seq` equals the persisted row id (cell-monotonic ordering key the client sorts by).
+- Outbound frame only — does not wake anything or cost an extra request.
+- One event, one shape, both paths (`eventRowToFrame` is the single source of truth).
+
+Diff (`src/session-cell.ts`):
+
+```ts
+// Persist user message
+this.ctx.storage.sql.exec(
+	'INSERT INTO events (ts, type, role, payload, meta) VALUES (?, ?, ?, ?, ?)',
+	ts, 'user', 'user', JSON.stringify({ text: frame.text }), null,
+);
+// Emit the same msg frame replay would produce -- one event, one shape, both paths.
+{
+	const userRowId = (this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }).id;
+	const userFrame = eventRowToFrame({
+		id: userRowId, type: 'user', role: 'user',
+		payload: JSON.stringify({ text: frame.text }), meta: null,
+	});
+	if (userFrame) ws.send(JSON.stringify(userFrame));
+}
+```
+
+### Test
+
+Added `test/session-cell.test.ts: live send emits msg with role user before replay` — connects, sends `hello-live`, asserts live frames include `msg { role: 'user', text: 'hello-live', seq === id }`, verifies `seq` equals the persisted user row id via `?__snapshot=1`, asserts still only 2 rows (no extra writes), and asserts `user seq < assistant seq` ordering.
+
+Previous suite only checked replayed user events, which is why this slipped through.
+
+### Verify — real output
+
+```bash
+bun tsc --noEmit
+# (no output, exit 0)
+
+bun test
+# Run 1: 67 pass, 0 fail, 185 expect() calls, 6 files [7.84s]
+# Run 2: 67 pass, 0 fail, 185 expect() calls, 6 files [7.54s]
+
+bunx prettier --write src/session-cell.ts test/session-cell.test.ts
+# src/session-cell.ts 328ms (unchanged)
+# test/session-cell.test.ts 126ms
+```
+
+Not changed: `test/helpers/server.ts` (wrangler bin shim under node is load-bearing). Not deployed.
+
+### Concerns
+
+- None for this fix. The `SELECT last_insert_rowid()` read is safe here because it runs synchronously on the same DO storage connection immediately after the user `INSERT` and before the assistant reserve `INSERT`, so it returns the user row id.

@@ -228,10 +228,10 @@ describe('session-cell integration', () => {
 
 		// Send a long message so the turn takes a moment (many 8-char chunks * 5ms each)
 		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'b'.repeat(200) }));
-		// Wait for first token frame — proves the turn started and reservation is durable
+		// Wait for first token frame -- proves the turn started and reservation is durable
 		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'token'), 3000);
 
-		// Read snapshot via HTTP without waiting for stream to finish — goes through
+		// Read snapshot via HTTP without waiting for stream to finish -- goes through
 		// worker's /ws proxy to the same SessionCell (same sessionId → same DO)
 		const snapRes = await fetch(`${BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}&__snapshot=1`);
 		expect(snapRes.ok).toBe(true);
@@ -265,6 +265,69 @@ describe('session-cell integration', () => {
 		expect(JSON.parse(rows2[1]!.payload).text).toBe('echo: ' + 'b'.repeat(200));
 		const meta2 = rows2[1]!.meta ? JSON.parse(rows2[1]!.meta) : {};
 		expect(meta2.interrupted).toBe(false);
+
+		ws.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+
+	test('live send emits msg with role user before replay', async () => {
+		const sessionId = `test-live-user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+		const ws = await wsConnect(sessionId, token);
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'hello-live' }));
+
+		const frames = await waitForFrames(
+			ws,
+			(frames) =>
+				frames.some(
+					(f) =>
+						f['t'] === 'msg' &&
+						(f as Record<string, unknown>)['role'] === 'user' &&
+						(f as Record<string, unknown>)['text'] === 'hello-live',
+				),
+			5000,
+		);
+		const userMsg = frames.find(
+			(f) =>
+				f['t'] === 'msg' && (f as Record<string, unknown>)['role'] === 'user' && (f as Record<string, unknown>)['text'] === 'hello-live',
+		) as Record<string, unknown> | undefined;
+		expect(userMsg).toBeDefined();
+		expect(userMsg!['role']).toBe('user');
+		expect(userMsg!['text']).toBe('hello-live');
+		expect(userMsg!['seq']).toBe(userMsg!['id']);
+		// seq must be the persisted row id -- verify via snapshot
+		const snapRes = await fetch(`${BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}&__snapshot=1`);
+		expect(snapRes.ok).toBe(true);
+		const rows = (await snapRes.json()) as { id: number; type: string; role: string | null; payload: string }[];
+		const userRow = rows.find((r) => r.type === 'user');
+		expect(userRow).toBeDefined();
+		expect(userMsg!['seq']).toBe(userRow!.id);
+		// still only 2 rows (user + assistant reserve) -- no extra writes
+		expect(rows.length).toBe(2);
+
+		// also wait for assistant echo to prove ordering (user seq < assistant seq)
+		const allFrames = await waitForFrames(
+			ws,
+			(frames) =>
+				frames.some(
+					(f) =>
+						f['t'] === 'msg' &&
+						(f as Record<string, unknown>)['role'] === 'assistant' &&
+						(f as Record<string, unknown>)['text'] === 'echo: hello-live',
+				),
+			5000,
+		);
+		// re-collect user msg from combined frames to verify ordering
+		const assistantMsg = allFrames.find(
+			(f) =>
+				f['t'] === 'msg' &&
+				(f as Record<string, unknown>)['role'] === 'assistant' &&
+				(f as Record<string, unknown>)['text'] === 'echo: hello-live',
+		) as Record<string, unknown> | undefined;
+		expect(assistantMsg).toBeDefined();
+		expect((userMsg!['seq'] as number) < (assistantMsg!['seq'] as number)).toBe(true);
 
 		ws.close();
 		await new Promise((r) => setTimeout(r, 200));
