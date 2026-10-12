@@ -38,11 +38,10 @@
 		"skipLibCheck": true,
 		"types": [
 			"./worker-configuration.d.ts",
-			"node",
-			"bun-types"
+			"node"
 		]
 	},
 	/* The SPA in sugu/ is its own project with its own tsconfig — do not typecheck
 	   it with the Worker's settings. */
-	"exclude": ["sugu"]
+	"exclude": ["sugu", "test"]
 }
