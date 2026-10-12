@@ -1,11 +1,11 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { signToken } from '../src/server/auth';
-import { startDevServer, type DevServer } from './helpers/server';
+import { startDevServer, TEST_SECRETS, type DevServer } from './helpers/server';
 
 let BASE: string;
 let WS_BASE: string;
 let _server: DevServer;
-const SECRET = '4f0a1aa91ca3c4b6ff366f4d88d58c6348195877c4023149';
+const SECRET = TEST_SECRETS.TOKEN_SECRET;
 
 function wsConnect(sessionId: string, token: string, since?: number): Promise<WebSocket> {
 	const tokenParam = `&token=${encodeURIComponent(token)}`;
@@ -345,7 +345,7 @@ describe('session-cell integration', () => {
 			ws,
 			(frames) =>
 				frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: busy-check') &&
-				frames.some((f) => f['t'] === 'state'),
+				frames.some((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === false),
 			5000,
 		);
 		const stateFrames = frames.filter((f) => f['t'] === 'state') as Record<string, unknown>[];
@@ -421,6 +421,104 @@ describe('session-cell integration', () => {
 		const secondMsg = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: second-turn');
 		expect(secondMsg).toBeDefined();
 
+		ws.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+
+	test('mid-stream disconnect: second send not rejected as busy and first row interrupted', async () => {
+		const sessionId = `test-disconnect-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+		const ws1 = await wsConnect(sessionId, token);
+		await waitForFrames(ws1, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		// Send a long message so we can disconnect mid-stream
+		ws1.send(JSON.stringify({ v: 1, t: 'send', text: 'x'.repeat(500) }));
+		await waitForFrames(ws1, (frames) => frames.some((f) => f['t'] === 'token'), 3000);
+		// Close mid-stream
+		ws1.close();
+		await new Promise((r) => setTimeout(r, 500));
+
+		// Reconnect and send again — should not be busy
+		const ws2 = await wsConnect(sessionId, token);
+		await waitForFrames(ws2, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+		ws2.send(JSON.stringify({ v: 1, t: 'send', text: 'after-disconnect' }));
+		const frames2 = await waitForFrames(
+			ws2,
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: after-disconnect'),
+			5000,
+		);
+		const busyErr = frames2.find((f) => f['t'] === 'err' && (f as Record<string, unknown>)['code'] === 'busy');
+		expect(busyErr).toBeUndefined();
+		const okMsg = frames2.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: after-disconnect');
+		expect(okMsg).toBeDefined();
+
+		// First turn's row should be interrupted
+		const snapRes = await fetch(`${BASE}/ws?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}&__snapshot=1`);
+		expect(snapRes.ok).toBe(true);
+		const rows = (await snapRes.json()) as { id: number; type: string; payload: string; meta: string | null }[];
+		const assistantRows = rows.filter((r) => r.type === 'assistant');
+		expect(assistantRows.length).toBe(2);
+		const firstMeta = assistantRows[0]!.meta ? JSON.parse(assistantRows[0]!.meta) : {};
+		expect(firstMeta.interrupted).toBe(true);
+
+		ws2.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+
+	test('mid-stream disconnect: replay after token includes interrupted', async () => {
+		const sessionId = `test-replay-interrupted-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+		const ws1 = await wsConnect(sessionId, token);
+		await waitForFrames(ws1, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		ws1.send(JSON.stringify({ v: 1, t: 'send', text: 'y'.repeat(500) }));
+		const tokenFrames = await waitForFrames(ws1, (frames) => frames.some((f) => f['t'] === 'token'), 3000);
+		const tokenSeq = (tokenFrames.find((f) => f['t'] === 'token') as Record<string, unknown>)['seq'] as number;
+		// Close mid-stream after first token
+		ws1.close();
+		await new Promise((r) => setTimeout(r, 500));
+
+		// Reconnect with since=0 to get full replay — should include interrupted msg
+		const ws2 = await wsConnect(sessionId, token, 0);
+		const replay = await waitForFrames(ws2, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+		const interrupted = replay.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['interrupted'] === true);
+		expect(interrupted).toBeDefined();
+		// The interrupted row's seq should be the token's seq (same reservation)
+		expect((interrupted as Record<string, unknown>)['seq']).toBe(tokenSeq);
+
+		ws2.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+
+	test('over-long send text is rejected', async () => {
+		const sessionId = `test-long-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+		const ws = await wsConnect(sessionId, token);
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'z'.repeat(9000) }));
+		const frames = await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'err'), 3000);
+		const err = frames.find((f) => f['t'] === 'err') as Record<string, unknown> | undefined;
+		expect(err).toBeDefined();
+		expect((err as Record<string, unknown>)['code']).toBe('bad_frame');
+
+		ws.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+
+	test('busy state emitted immediately after send', async () => {
+		const sessionId = `test-busy-state-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+		const ws = await wsConnect(sessionId, token);
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'busy-state-check' }));
+		const frames = await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === true), 3000);
+		const busyState = frames.find((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === true);
+		expect(busyState).toBeDefined();
+
+		// Wait for completion
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: busy-state-check'), 5000);
 		ws.close();
 		await new Promise((r) => setTimeout(r, 200));
 	});

@@ -14,6 +14,7 @@ export class SessionStore {
 	error = $state<string | null>(null);
 
 	private socket: SuguSocket | null = null;
+	private pendingText: string | null = null;
 
 	busy = $derived(this.frameState.busy);
 	messages = $derived(this.frameState.messages);
@@ -25,7 +26,12 @@ export class SessionStore {
 		}
 	}
 
-	connect(sessionId: string, onOpen?: () => void): void {
+	connect(sessionId: string, onOpen?: () => void, onBusyError?: (text: string) => void): void {
+		const isNewSession = this.sessionId !== null && this.sessionId !== sessionId;
+		if (isNewSession) {
+			this.frameState = initialFrameState();
+			this.error = null;
+		}
 		this.disconnect();
 		this.sessionId = sessionId;
 		const token = this.token ?? getToken();
@@ -42,6 +48,17 @@ export class SessionStore {
 
 		this.socket = new SuguSocket(sessionId, token, since, {
 			onFrame: (frame: Frame) => {
+				if (frame.t === 'err') {
+					this.error = frame.message;
+					if (frame.code === 'busy' && this.pendingText && onBusyError) {
+						onBusyError(this.pendingText);
+					}
+					this.pendingText = null;
+					return;
+				}
+				if (frame.t === 'msg' && frame.role === 'assistant' && !frame.interrupted) {
+					this.pendingText = null;
+				}
 				this.frameState = applyFrame(this.frameState, frame);
 			},
 			onState: (state: ConnectionState) => {
@@ -69,6 +86,7 @@ export class SessionStore {
 			this.error = 'You are offline — message kept in composer';
 			return;
 		}
+		this.pendingText = text;
 		if (this.socket) {
 			this.socket.sendText(text);
 		}

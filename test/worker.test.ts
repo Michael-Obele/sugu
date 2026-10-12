@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import { startDevServer, type DevServer } from './helpers/server';
+import { startDevServer, TEST_SECRETS, type DevServer } from './helpers/server';
 import { signToken } from '../src/server/auth';
 
 // Each login test uses its own cf-connecting-ip so buckets are deterministic and isolated.
@@ -11,9 +11,9 @@ let server: DevServer;
 let BASE: string;
 let WS_BASE: string;
 
-const SECRET = '4f0a1aa91ca3c4b6ff366f4d88d58c6348195877c4023149';
-const ADMIN = '16e9a1696278265e7d30700ceeb40ea16e3c32794e8507ce';
-const PASSPHRASE = 'dev-passphrase';
+const SECRET = TEST_SECRETS.TOKEN_SECRET;
+const ADMIN = TEST_SECRETS.ADMIN_TOKEN;
+const PASSPHRASE = TEST_SECRETS.SUGU_PASSPHRASE;
 
 // Bun runs test files in parallel and each integration file spawns its own `wrangler
 // dev`, so a cold start can take well past bun's 5s default hook budget.
@@ -28,13 +28,28 @@ afterAll(async () => {
 }, 30_000);
 
 describe('worker edge', () => {
-	test('GET /api/health -> 200 and two pongs', async () => {
+	test('GET /api/health -> 200 cheap liveness (no DO)', async () => {
 		const res = await fetch(`${BASE}/api/health`);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as Record<string, unknown>;
+		expect(body.ok).toBe(true);
+	});
+
+	test('GET /api/healthz with token -> 200 and two pongs', async () => {
+		const token = await signToken(SECRET);
+		const res = await fetch(`${BASE}/api/healthz`, {
+			headers: { Authorization: `Bearer ${token}` },
+		});
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as Record<string, unknown>;
 		expect(body.ok).toBe(true);
 		expect(body.meta).toBe('pong');
 		expect(body.session).toBe('pong');
+	});
+
+	test('GET /api/healthz without token -> 401', async () => {
+		const res = await fetch(`${BASE}/api/healthz`);
+		expect(res.status).toBe(401);
 	});
 
 	test('POST /api/login with wrong passphrase -> 401', async () => {
@@ -172,6 +187,15 @@ describe('worker edge', () => {
 		expect(res.status).toBe(200);
 		const text = await res.text();
 		expect(text).toContain('<!doctype html');
+	});
+
+	test('login with empty passphrase is rejected', async () => {
+		const res = await fetch(`${BASE}/api/login`, {
+			method: 'POST',
+			headers: loginHeaders('10.0.0.99'),
+			body: JSON.stringify({ passphrase: '' }),
+		});
+		expect(res.status).toBe(401);
 	});
 
 	test('login throttle: 5 failed attempts then 6th returns 429 (only failures count)', async () => {

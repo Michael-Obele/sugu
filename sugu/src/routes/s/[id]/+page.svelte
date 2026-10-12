@@ -15,6 +15,7 @@
 	let pendingSend = $state<string | null>(null);
 	let lastConnectedId: string | null = null;
 
+
 	function doConnect(id: string): void {
 		if (!id) return;
 		if (lastConnectedId === id) return;
@@ -24,7 +25,13 @@
 			return;
 		}
 		lastConnectedId = id;
-		sessionStore.connect(id, flushPending);
+		sessionStore.connect(
+			id,
+			flushPending,
+			(text) => {
+				composerText = text;
+			}
+		);
 	}
 
 	function flushPending(): void {
@@ -79,6 +86,13 @@
 
 <div class="flex h-dvh flex-col bg-background">
 	<ConnectionBanner state={sessionStore.connection} />
+
+	{#if sessionStore.error}
+		<div role="alert" class="flex items-center justify-between gap-2 bg-destructive px-4 py-2 text-sm text-destructive-foreground">
+			<span>{sessionStore.error}</span>
+			<button type="button" onclick={() => (sessionStore.error = null)} class="min-h-[44px] min-w-[44px] rounded-md px-2 text-xs underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">Dismiss</button>
+		</div>
+	{/if}
 
 	<header class="safe-top flex h-14 shrink-0 items-center gap-2 border-b px-4">
 		<a

@@ -1,54 +1,25 @@
-# sv
+# Sugu
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Phone-first agent session on Cloudflare Free — SvelteKit PWA + one Worker + Durable Objects.
 
-## Creating a project
-
-If you're seeing this, you've probably already done this step. Congrats!
+## Develop
 
 ```sh
-# create a new project
-npx sv create my-app
+bun install
+bun run dev        # builds the PWA, then wrangler dev at localhost:8787
 ```
 
-To recreate this project with the same configuration:
+## Build & check
 
 ```sh
-# recreate this project
-bun x sv@1.1.1 create --template minimal --types ts --install bun sugu
+bun run --cwd sugu build
+bun run --cwd sugu check
+bun tsc --noEmit
+bun test
 ```
 
-## Adding features
-
-Add features to your project with `sv add`:
+## Deploy
 
 ```sh
-npx sv add
+bun run deploy
 ```
-
-For example, to add Tailwind CSS:
-
-```sh
-npx sv add tailwindcss
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.

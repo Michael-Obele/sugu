@@ -21,6 +21,9 @@ function getClientIp(request: Request): string {
 	return request.headers.get('cf-connecting-ip') ?? 'unknown';
 }
 
+// Best-effort throttle: read-modify-write on Cache API, so concurrent guesses
+// advance the counter by ~1 per round. No atomic counter without a DO/KV, and
+// D1 is forbidden on the unauthenticated path — this is intentionally best-effort.
 async function isThrottled(request: Request): Promise<boolean> {
 	const ip = getClientIp(request);
 	const cache = caches.default;
@@ -50,6 +53,10 @@ async function recordFailedAttempt(request: Request): Promise<void> {
 }
 
 async function requireUserAuth(request: Request, env: Env): Promise<Response | null> {
+	if (!env.TOKEN_SECRET) {
+		console.error('TOKEN_SECRET is not set — refusing auth');
+		return errorJson('Server misconfigured', 500);
+	}
 	const token = parseBearer(request);
 	if (!token) return errorJson('Unauthorized', 401);
 	const result = await verifyToken(token, env.TOKEN_SECRET);
@@ -70,8 +77,13 @@ export default {
 	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
 
-		// Health — keep working, no auth
+		// Health — cheap liveness, no DO touch (finding 7). Authenticated pong check is /api/healthz.
 		if (url.pathname === '/api/health' && request.method === 'GET') {
+			return json({ ok: true });
+		}
+		if (url.pathname === '/api/healthz' && request.method === 'GET') {
+			const authErr = await requireUserAuth(request, env);
+			if (authErr) return authErr;
 			const meta = env.META.getByName('index');
 			const session = env.SESSIONS.getByName('smoke');
 			return json({
@@ -97,7 +109,19 @@ export default {
 			if (!parsed.success) {
 				return errorJson('Invalid body', 400);
 			}
-			const ok = await constantTimeEqual(parsed.output.passphrase, env.SUGU_PASSPHRASE ?? '');
+			if (!env.SUGU_PASSPHRASE) {
+				console.error('SUGU_PASSPHRASE is not set — refusing login');
+				return errorJson('Server misconfigured', 500);
+			}
+			if (!env.TOKEN_SECRET) {
+				console.error('TOKEN_SECRET is not set — refusing login');
+				return errorJson('Server misconfigured', 500);
+			}
+			if (!parsed.output.passphrase) {
+				await recordFailedAttempt(request);
+				return errorJson('Wrong passphrase', 401);
+			}
+			const ok = await constantTimeEqual(parsed.output.passphrase, env.SUGU_PASSPHRASE);
 			if (!ok) {
 				await recordFailedAttempt(request);
 				return errorJson('Wrong passphrase', 401);
@@ -153,6 +177,10 @@ export default {
 			const token = url.searchParams.get('token');
 			if (!token) {
 				return errorJson('Unauthorized', 401);
+			}
+			if (!env.TOKEN_SECRET) {
+				console.error('TOKEN_SECRET is not set — refusing WS auth');
+				return errorJson('Server misconfigured', 500);
 			}
 			const result = await verifyToken(token, env.TOKEN_SECRET);
 			if (!result.ok) {

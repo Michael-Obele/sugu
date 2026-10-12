@@ -3,8 +3,22 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
+import { writeFile, readFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 
 const HEALTH_PATH = '/api/health';
+
+function randomHex(bytes = 20): string {
+	return randomBytes(bytes).toString('hex');
+}
+
+// Generated once per test run so the suite is self-contained (no .dev.vars needed).
+// Exported so test files can sign tokens with the same secret the dev server uses.
+export const TEST_SECRETS = {
+	SUGU_PASSPHRASE: 'test-passphrase-' + randomHex(8),
+	TOKEN_SECRET: randomHex(20),
+	ADMIN_TOKEN: randomHex(20),
+};
 
 // Resolve the project from this file rather than from the working directory or a
 // hardcoded path, so the suite runs anywhere (a moved checkout, CI).
@@ -94,7 +108,13 @@ export async function startDevServer(opts?: { port?: number }): Promise<DevServe
 			'--port',
 			String(port),
 			'--persist-to',
-			persistDir
+			persistDir,
+			'--var',
+			`SUGU_PASSPHRASE:${TEST_SECRETS.SUGU_PASSPHRASE}`,
+			'--var',
+			`TOKEN_SECRET:${TEST_SECRETS.TOKEN_SECRET}`,
+			'--var',
+			`ADMIN_TOKEN:${TEST_SECRETS.ADMIN_TOKEN}`,
 		],
 		cwd: PROJECT_ROOT,
 		env,

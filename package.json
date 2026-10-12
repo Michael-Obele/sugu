@@ -4,7 +4,7 @@
 	"private": true,
 	"workspaces": ["sugu"],
 	"scripts": {
-		"dev": "wrangler dev",
+		"dev": "bun run build && wrangler dev",
 		"build": "bun run --cwd sugu build",
 		"deploy": "bun run build && wrangler deploy",
 		"test": "bun test",

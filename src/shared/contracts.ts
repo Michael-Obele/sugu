@@ -42,7 +42,7 @@ const HelloFrame = v.strictObject({
 const SendFrame = v.strictObject({
 	v: v.literal(1),
 	t: v.literal('send'),
-	text: v.string(),
+	text: v.pipe(v.string(), v.maxLength(8000)),
 	skills: v.optional(v.array(v.string())),
 });
 

@@ -16,7 +16,7 @@
 		role="status"
 		aria-live="polite"
 		class={cn(
-			'flex h-8 items-center justify-center bg-amber-500 px-4 text-sm font-medium text-black',
+			'flex h-8 items-center justify-center bg-warning px-4 text-sm font-medium text-warning-foreground',
 			'safe-top'
 		)}
 	>

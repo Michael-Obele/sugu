@@ -18,6 +18,7 @@ export class SessionCell extends DurableObject<Env> {
 	private pendingSeq: number | null = null;
 	private pendingText = '';
 	private pendingAssistantId: number | null = null;
+	private activeWs: WebSocket | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -138,7 +139,11 @@ export class SessionCell extends DurableObject<Env> {
 		}
 		const parsed = parseFrame(raw);
 		if (!parsed.ok) {
-			ws.send(JSON.stringify({ v: 1, t: 'err', code: 'bad_frame', message: 'bad frame' }));
+			{
+			const msg = parsed.issues[0]?.message ?? 'bad frame';
+			const isTooLong = msg.includes('length') || msg.includes('max');
+			ws.send(JSON.stringify({ v: 1, t: 'err', code: 'bad_frame', message: isTooLong ? 'message too long (max 8000 chars)' : 'bad frame' }));
+		}
 			return;
 		}
 		const frame = parsed.frame;
@@ -170,8 +175,33 @@ export class SessionCell extends DurableObject<Env> {
 	// call ws.close() again: it re-sends the peer's status code, and a browser close that
 	// carries no status arrives as 1005, which is reserved and invalid to send, so every
 	// disconnect threw `InvalidAccessError: Invalid WebSocket close code: 1005`.
-	async webSocketClose(_ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
-		// nothing to clean up: the event log is the only state, and it is already durable
+	async webSocketClose(ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
+		if (this.activeWs === ws) this.activeWs = null;
+		if (!this.busy || !this.abortCtrl) return;
+		// Phone dropped mid-stream (D7 / AR failure-mode table): abort upstream work,
+		// persist partial as interrupted, clear busy so reconnect can send again.
+		this.abortCtrl.abort();
+		// Give handleSend's abort path a chance to run; if it hasn't persisted yet
+		// (e.g. close arrived before the loop's next yield), persist here.
+		// Use queueMicrotask to let the abort branch in handleSend run first if it will.
+		await new Promise<void>((r) => queueMicrotask(() => r()));
+		if (this.pendingAssistantId !== null) {
+			try {
+				this.ctx.storage.sql.exec(
+					'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
+					JSON.stringify({ text: this.pendingText }),
+					JSON.stringify({ interrupted: true }),
+					this.pendingAssistantId,
+				);
+			} catch {
+				// ignore
+			}
+			this.busy = false;
+			this.pendingSeq = null;
+			this.pendingText = '';
+			this.pendingAssistantId = null;
+			this.abortCtrl = null;
+		}
 	}
 
 	async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
@@ -202,7 +232,7 @@ export class SessionCell extends DurableObject<Env> {
 			}
 		}
 		// Send fresh state
-		ws.send(JSON.stringify(this.buildStateFrame()));
+try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone */ }
 	}
 
 	private async handleSend(ws: WebSocket, frame: Extract<Frame, { t: 'send' }>): Promise<void> {
@@ -250,9 +280,18 @@ export class SessionCell extends DurableObject<Env> {
 		this.pendingSeq = nextSeq;
 		this.pendingAssistantId = nextSeq;
 		this.pendingText = '';
+		// Server-authoritative busy: every socket learns a turn is running (finding 1).
+		try {
+	try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone */ }
+		} catch {
+			// socket already gone — webSocketClose will handle abort
+		}
+		this.activeWs = ws;
 
 		// Stream echo as token frames (Phase 0: echo)
-		const echoText = `echo: ${frame.text}`;
+		let echoText = `echo: ${frame.text}`;
+		// AR-8: no frame > 16 KB — truncate with marker if needed (finding 4)
+		if (echoText.length > 16000) echoText = echoText.slice(0, 15970) + '…[truncated]';
 		this.abortCtrl = new AbortController();
 		const signal = this.abortCtrl.signal;
 
@@ -261,7 +300,13 @@ export class SessionCell extends DurableObject<Env> {
 		for (const chunk of chunks) {
 			if (signal.aborted) break;
 			this.pendingText += chunk;
-			ws.send(JSON.stringify({ v: 1, t: 'token', seq: nextSeq, delta: chunk }));
+			try {
+				ws.send(JSON.stringify({ v: 1, t: 'token', seq: nextSeq, delta: chunk }));
+			} catch {
+				// socket closed mid-stream — abort like a disconnect
+				this.abortCtrl?.abort();
+				break;
+			}
 			// deliberate exception to the 'no timers in the DO' rule: armed only
 			// while a turn is in flight, so it cannot block idle hibernation;
 			// removing it makes cancel and busy-rejection unreachable because the
@@ -279,23 +324,27 @@ export class SessionCell extends DurableObject<Env> {
 				JSON.stringify({ interrupted: true }),
 				this.pendingAssistantId,
 			);
-			ws.send(
-				JSON.stringify({
-					v: 1,
-					t: 'msg',
-					seq: this.pendingAssistantId,
-					id: this.pendingAssistantId,
-					role: 'assistant',
-					text: this.pendingText,
-					interrupted: true,
-				}),
-			);
+			try {
+				ws.send(
+					JSON.stringify({
+						v: 1,
+						t: 'msg',
+						seq: this.pendingAssistantId,
+						id: this.pendingAssistantId,
+						role: 'assistant',
+						text: this.pendingText,
+						interrupted: true,
+					}),
+				);
+			} catch {
+				// socket gone
+			}
 			this.busy = false;
 			this.pendingSeq = null;
 			this.pendingText = '';
 			this.pendingAssistantId = null;
 			this.abortCtrl = null;
-			ws.send(JSON.stringify(this.buildStateFrame()));
+	try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone */ }
 			return;
 		}
 
@@ -306,22 +355,27 @@ export class SessionCell extends DurableObject<Env> {
 			JSON.stringify({ interrupted: false }),
 			this.pendingAssistantId,
 		);
-		ws.send(
-			JSON.stringify({
-				v: 1,
-				t: 'msg',
-				seq: this.pendingAssistantId,
-				id: this.pendingAssistantId,
-				role: 'assistant',
-				text: echoText,
-			}),
-		);
+		try {
+			ws.send(
+				JSON.stringify({
+					v: 1,
+					t: 'msg',
+					seq: this.pendingAssistantId,
+					id: this.pendingAssistantId,
+					role: 'assistant',
+					text: echoText,
+				}),
+			);
+		} catch {
+			// socket gone
+		}
 		this.busy = false;
 		this.pendingSeq = null;
 		this.pendingText = '';
 		this.pendingAssistantId = null;
 		this.abortCtrl = null;
-		ws.send(JSON.stringify(this.buildStateFrame()));
+		if (this.activeWs === ws) this.activeWs = null;
+		try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone */ }
 	}
 
 	private async handleCancel(_ws: WebSocket): Promise<void> {

@@ -68,8 +68,10 @@ export class SuguSocket {
 				return;
 			}
 			const frame = parsed.frame;
-			// Track since for resume: any frame with seq updates since
-			if ('seq' in frame && typeof (frame as Record<string, unknown>)['seq'] === 'number') {
+			// Track since for resume: only persisted frames (msg/state/tool) advance since.
+			// Token frames carry the reserved assistant row id but are not yet persisted —
+			// advancing on token would skip the interrupted row on reconnect (finding 5).
+			if ((frame.t === 'msg' || frame.t === 'state' || frame.t === 'tool') && 'seq' in frame && typeof (frame as Record<string, unknown>)['seq'] === 'number') {
 				const seq = (frame as unknown as { seq: number }).seq;
 				if (seq > this.since) this.since = seq;
 			}
