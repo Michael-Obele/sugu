@@ -166,9 +166,12 @@ export class SessionCell extends DurableObject<Env> {
 		}
 	}
 
-	async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> {
-		ws.close(code, reason);
-		void wasClean;
+	// The platform has already closed this socket, so there is nothing to do here. Do NOT
+	// call ws.close() again: it re-sends the peer's status code, and a browser close that
+	// carries no status arrives as 1005, which is reserved and invalid to send, so every
+	// disconnect threw `InvalidAccessError: Invalid WebSocket close code: 1005`.
+	async webSocketClose(_ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
+		// nothing to clean up: the event log is the only state, and it is already durable
 	}
 
 	async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
@@ -287,12 +290,12 @@ export class SessionCell extends DurableObject<Env> {
 					interrupted: true,
 				}),
 			);
-			ws.send(JSON.stringify(this.buildStateFrame()));
 			this.busy = false;
 			this.pendingSeq = null;
 			this.pendingText = '';
 			this.pendingAssistantId = null;
 			this.abortCtrl = null;
+			ws.send(JSON.stringify(this.buildStateFrame()));
 			return;
 		}
 
@@ -313,12 +316,12 @@ export class SessionCell extends DurableObject<Env> {
 				text: echoText,
 			}),
 		);
-		ws.send(JSON.stringify(this.buildStateFrame()));
 		this.busy = false;
 		this.pendingSeq = null;
 		this.pendingText = '';
 		this.pendingAssistantId = null;
 		this.abortCtrl = null;
+		ws.send(JSON.stringify(this.buildStateFrame()));
 	}
 
 	private async handleCancel(_ws: WebSocket): Promise<void> {

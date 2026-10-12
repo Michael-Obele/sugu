@@ -333,6 +333,98 @@ describe('session-cell integration', () => {
 		await new Promise((r) => setTimeout(r, 200));
 	});
 
+	test('completed turn ends with state { busy: false }', async () => {
+		const sessionId = `test-busy-false-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+		const ws = await wsConnect(sessionId, token);
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'busy-check' }));
+
+		const frames = await waitForFrames(
+			ws,
+			(frames) =>
+				frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: busy-check') &&
+				frames.some((f) => f['t'] === 'state'),
+			5000,
+		);
+		const stateFrames = frames.filter((f) => f['t'] === 'state') as Record<string, unknown>[];
+		expect(stateFrames.length).toBeGreaterThan(0);
+		const lastState = stateFrames[stateFrames.length - 1]!;
+		expect(lastState['busy']).toBe(false);
+
+		ws.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+
+	test('cancelled turn ends with state { busy: false }', async () => {
+		const sessionId = `test-cancel-busy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+		const ws = await wsConnect(sessionId, token);
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'c'.repeat(200) }));
+		await new Promise((r) => setTimeout(r, 15));
+		ws.send(JSON.stringify({ v: 1, t: 'cancel' }));
+
+		const frames = await waitForFrames(
+			ws,
+			(frames) =>
+				frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['interrupted'] === true) &&
+				frames.some((f) => f['t'] === 'state'),
+			5000,
+		);
+		const stateFrames = frames.filter((f) => f['t'] === 'state') as Record<string, unknown>[];
+		expect(stateFrames.length).toBeGreaterThan(0);
+		const lastState = stateFrames[stateFrames.length - 1]!;
+		expect(lastState['busy']).toBe(false);
+
+		ws.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+
+	test('after turn completes second send is accepted', async () => {
+		const sessionId = `test-second-send-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+		const ws = await wsConnect(sessionId, token);
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'first-turn' }));
+		await waitForFrames(
+			ws,
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: first-turn'),
+			5000,
+		);
+		// ensure the turn fully completed (state with busy:false) before second send
+		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === false), 3000);
+
+		// second send should be accepted, not rejected with busy
+		const secondFrames: Record<string, unknown>[] = [];
+		const onMessage = (event: MessageEvent) => {
+			try {
+				secondFrames.push(JSON.parse(event.data as string));
+			} catch {
+				// ignore
+			}
+		};
+		ws.addEventListener('message', onMessage);
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'second-turn' }));
+		const frames = await waitForFrames(
+			ws,
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: second-turn'),
+			5000,
+		);
+		ws.removeEventListener('message', onMessage);
+
+		const busyErr = [...secondFrames, ...frames].find((f) => f['t'] === 'err' && (f as Record<string, unknown>)['code'] === 'busy');
+		expect(busyErr).toBeUndefined();
+		const secondMsg = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: second-turn');
+		expect(secondMsg).toBeDefined();
+
+		ws.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+
 	test('hello with bad token gets err auth and close 1008', async () => {
 		const sessionId = `test-auth-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 		const badToken = await signToken('wrong-secret');
