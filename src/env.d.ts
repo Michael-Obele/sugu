@@ -21,4 +21,6 @@ interface Env {
 	EXA_API_KEY: string;
 	/** Phase 2: fine-grained GitHub PAT. */
 	GITHUB_TOKEN: string;
+	/** Batch 2A: overridable model catalogue (JSON array). */
+	SUGU_MODELS?: string;
 }

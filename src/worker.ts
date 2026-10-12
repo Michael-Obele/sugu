@@ -3,6 +3,7 @@ import { SessionCell } from './session-cell';
 import { constantTimeEqual, signToken, verifyToken } from './server/auth';
 import { errorJson, json, parseBearer } from './server/http';
 import { handleProbeCompute, handleProbeRows } from './server/probe';
+import { getModels } from './server/models';
 import * as v from 'valibot';
 
 export { MetaCell, SessionCell };
@@ -183,6 +184,109 @@ export default {
 			const meta = env.META.getByName('index');
 			const created = await meta.create({ id, title, model });
 			return json(created, 201);
+		}
+
+		// GET /api/models — token-authed, overridable via SUGU_MODELS
+		if (url.pathname === '/api/models' && request.method === 'GET') {
+			const authErr = await requireUserAuth(request, env);
+			if (authErr) return authErr;
+			const models = getModels(env as unknown as { SUGU_MODELS?: string });
+			return json({ models });
+		}
+
+		// PATCH /api/sessions/:id — rename and/or model
+		if (url.pathname.startsWith('/api/sessions/') && request.method === 'PATCH' && !url.pathname.endsWith('/export') && !url.pathname.endsWith('/events')) {
+			const authErr = await requireUserAuth(request, env);
+			if (authErr) return authErr;
+			const id = url.pathname.slice('/api/sessions/'.length).split('/')[0] ?? '';
+			if (!id) return errorJson('Missing id', 400);
+			let body: unknown;
+			try {
+				const t = await request.text();
+				body = t ? JSON.parse(t) : {};
+			} catch {
+				return errorJson('Invalid JSON', 400);
+			}
+			const parsed = v.safeParse(v.strictObject({ title: v.optional(v.string()), model: v.optional(v.string()) }), body);
+			if (!parsed.success) return errorJson('Invalid body', 400);
+			const meta = env.META.getByName('index');
+			const existing = await meta.get(id);
+			if (!existing) return errorJson('Not found', 404);
+			if (parsed.output.title !== undefined) {
+				const trimmed = parsed.output.title.trim();
+				if (!trimmed) return errorJson('Title cannot be empty', 400);
+				const updated = await meta.rename(id, trimmed);
+				if (!updated) return errorJson('Not found', 404);
+				// Also update model if provided
+				if (parsed.output.model !== undefined) {
+					await meta.touch({ id, model: parsed.output.model.trim() });
+					const refreshed = await meta.get(id);
+					return json(refreshed!);
+				}
+				return json(updated);
+			}
+			if (parsed.output.model !== undefined) {
+				await meta.touch({ id, model: parsed.output.model.trim() });
+				const refreshed = await meta.get(id);
+				return json(refreshed!);
+			}
+			return json(existing);
+		}
+
+		// DELETE /api/sessions/:id — idempotent
+		if (url.pathname.startsWith('/api/sessions/') && request.method === 'DELETE' && !url.pathname.endsWith('/export') && !url.pathname.endsWith('/events')) {
+			const authErr = await requireUserAuth(request, env);
+			if (authErr) return authErr;
+			const id = url.pathname.slice('/api/sessions/'.length).split('/')[0] ?? '';
+			if (!id) return errorJson('Missing id', 400);
+			const meta = env.META.getByName('index');
+			await meta.remove(id);
+			// Idempotent: always 200, even if already absent.
+			// Note: we do not delete the SessionCell's SQLite — there is no API to drop a DO.
+			return json({ ok: true });
+		}
+
+		// GET /api/sessions/:id/export — JSONL download
+		if (url.pathname.endsWith('/export') && request.method === 'GET' && url.pathname.startsWith('/api/sessions/')) {
+			const authErr = await requireUserAuth(request, env);
+			if (authErr) return authErr;
+			const parts = url.pathname.slice('/api/sessions/'.length).split('/');
+			const id = parts[0] ?? '';
+			if (!id) return errorJson('Missing id', 400);
+			const meta = env.META.getByName('index');
+			const existing = await meta.get(id);
+			if (!existing) return errorJson('Not found', 404);
+			const sid = env.SESSIONS.idFromName(id);
+			const stub = env.SESSIONS.get(sid);
+			const jsonl = await (stub as unknown as { exportJsonl: () => Promise<string> }).exportJsonl();
+			return new Response(jsonl, {
+				headers: {
+					'content-type': 'text/plain; charset=utf-8',
+					'content-disposition': `attachment; filename="${id}.jsonl"`,
+				},
+			});
+		}
+
+		// GET /api/sessions/:id/events — paged history
+		if (url.pathname.endsWith('/events') && request.method === 'GET' && url.pathname.startsWith('/api/sessions/')) {
+			const authErr = await requireUserAuth(request, env);
+			if (authErr) return authErr;
+			const parts = url.pathname.slice('/api/sessions/'.length).split('/');
+			const id = parts[0] ?? '';
+			if (!id) return errorJson('Missing id', 400);
+			const meta = env.META.getByName('index');
+			const existing = await meta.get(id);
+			if (!existing) return errorJson('Not found', 404);
+			const beforeRaw = url.searchParams.get('before');
+			const limitRaw = url.searchParams.get('limit');
+			const before = beforeRaw !== null ? Number(beforeRaw) : undefined;
+			const limit = limitRaw !== null ? Number(limitRaw) : undefined;
+			if (beforeRaw !== null && (!Number.isFinite(before!) || before! < 0)) return errorJson('Invalid before', 400);
+			if (limitRaw !== null && (!Number.isFinite(limit!) || limit! < 1)) return errorJson('Invalid limit', 400);
+			const sid = env.SESSIONS.idFromName(id);
+			const stub = env.SESSIONS.get(sid);
+			const page = await (stub as unknown as { eventsPage: (o: unknown) => Promise<unknown> }).eventsPage({ before, limit });
+			return json(page);
 		}
 
 		// WebSocket upgrade — auth gate BEFORE touching the DO

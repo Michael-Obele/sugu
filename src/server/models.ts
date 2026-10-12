@@ -361,3 +361,48 @@ export function resolveAdapter(model: string, env: ModelEnv): ModelAdapter {
 
 // Re-export pricing for usage recording
 export { PRICE_TABLE, costFor };
+
+
+// ---------------------------------------------------------------------------
+// Model catalogue — single source of truth, overridable via SUGU_MODELS env.
+// ---------------------------------------------------------------------------
+
+export type ModelInfo = { id: string; label: string; provider: 'deepseek' | 'openrouter' };
+
+const DEFAULT_MODELS: ModelInfo[] = [
+	{ id: 'deepseek-chat', label: 'DeepSeek Chat', provider: 'deepseek' },
+	{ id: 'deepseek-reasoner', label: 'DeepSeek Reasoner', provider: 'deepseek' },
+	{ id: 'openai/gpt-4o', label: 'GPT-4o', provider: 'openrouter' },
+	{ id: 'openai/gpt-4o-mini', label: 'GPT-4o mini', provider: 'openrouter' },
+	{ id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', provider: 'openrouter' },
+	{ id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash', provider: 'openrouter' },
+	{ id: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B', provider: 'openrouter' },
+];
+
+export function getModels(env: { SUGU_MODELS?: string }): ModelInfo[] {
+	const raw = env.SUGU_MODELS;
+	if (raw) {
+		try {
+			const parsed = JSON.parse(raw);
+			if (Array.isArray(parsed) && parsed.length > 0) {
+				const valid: ModelInfo[] = [];
+				for (const m of parsed) {
+					if (
+						m &&
+						typeof m.id === 'string' &&
+						typeof m.label === 'string' &&
+						(m.provider === 'deepseek' || m.provider === 'openrouter')
+					) {
+						valid.push({ id: m.id, label: m.label, provider: m.provider });
+					}
+				}
+				if (valid.length > 0) return valid;
+			}
+		} catch {
+			// fall through to default
+		}
+	}
+	return DEFAULT_MODELS;
+}
+
+export { DEFAULT_MODELS };

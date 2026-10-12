@@ -83,6 +83,12 @@ export class SessionCell extends DurableObject<Env> {
 				tools     INTEGER NOT NULL DEFAULT 0
 			)
 		`);
+		sql.exec(`
+			CREATE TABLE IF NOT EXISTS meta (
+				key   TEXT PRIMARY KEY,
+				value TEXT NOT NULL
+			)
+		`);
 	}
 
 	async ping(): Promise<string> {
@@ -131,6 +137,60 @@ export class SessionCell extends DurableObject<Env> {
 	async snapshotWithMeta(): Promise<{ id: number; type: string; role: string | null; payload: string; meta: string | null }[]> {
 		const cursor = this.ctx.storage.sql.exec('SELECT id, type, role, payload, meta FROM events ORDER BY id ASC');
 		return [...cursor] as unknown as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
+	}
+
+	// Batch 2A: paged history — reuse eventRowToFrame so live and replay agree.
+	// Returns frames in ascending seq order (oldest first), consistent with WS replay.
+	async eventsPage(opts: { before?: number; limit?: number }): Promise<{ frames: Frame[]; hasMore: boolean }> {
+		const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+		const before = opts.before;
+		let cursor;
+			if (before !== undefined) {
+			cursor = this.ctx.storage.sql.exec('SELECT id, type, role, payload, meta FROM events WHERE id < ? ORDER BY id DESC LIMIT ?', before, limit + 1);
+		} else {
+			cursor = this.ctx.storage.sql.exec('SELECT id, type, role, payload, meta FROM events ORDER BY id DESC LIMIT ?', limit + 1);
+		}
+		const rows = [...cursor] as unknown as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
+		const hasMore = rows.length > limit;
+		const pageRows = hasMore ? rows.slice(0, limit) : rows;
+		// Reverse to ascending order (oldest first) — consistent with WS replay
+		pageRows.reverse();
+		const frames: Frame[] = [];
+		for (const r of pageRows) {
+			const f = eventRowToFrame(r);
+			if (f) frames.push(f as Frame);
+		}
+		return { frames, hasMore };
+	}
+
+	async exportJsonl(): Promise<string> {
+		const lines: string[] = [];
+		lines.push(JSON.stringify({ version: 1 }));
+		const cursor = this.ctx.storage.sql.exec('SELECT id, ts, type, payload FROM events ORDER BY id ASC');
+		for (const row of cursor) {
+			const r = row as unknown as { id: number; ts: string; type: string; payload: string };
+			let payload: unknown;
+			try { payload = JSON.parse(r.payload); } catch { payload = {}; }
+			lines.push(JSON.stringify({ seq: r.id, ts: r.ts, type: r.type, payload }));
+		}
+		return lines.join('\n') + '\n';
+	}
+
+	// Session id persistence (survives DO eviction)
+	private getSessionId(): string | null {
+		try {
+			const row = this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'sessionId'").one() as unknown as { value: string } | undefined;
+			return row?.value ?? null;
+		} catch { return null; }
+	}
+
+	private setSessionId(id: string): void {
+		this.ctx.storage.sql.exec("INSERT INTO meta (key, value) VALUES ('sessionId', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", id);
+	}
+
+	private isFirstUserMessage(): boolean {
+		const row = this.ctx.storage.sql.exec("SELECT COUNT(*) as c FROM events WHERE type = 'user'").one() as unknown as { c: number };
+		return row.c === 0;
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -243,6 +303,11 @@ export class SessionCell extends DurableObject<Env> {
 			}
 			return;
 		}
+		// Persist sessionId from hello (survives DO eviction, needed for title)
+		if (frame.sessionId) {
+			const existing = this.getSessionId();
+			if (!existing) this.setSessionId(frame.sessionId);
+		}
 		const since = frame.since ?? 0;
 		// Replay events with id > since
 		const cursor = this.ctx.storage.sql.exec('SELECT id, type, role, payload, meta FROM events WHERE id > ? ORDER BY id ASC', since);
@@ -268,6 +333,13 @@ export class SessionCell extends DurableObject<Env> {
 		}
 		this.busy = true;
 		const ts = nowIso();
+		// Title: set from first user line, once per session (AR-6 budget)
+		const isFirst = this.isFirstUserMessage();
+		let firstTitle: string | null = null;
+		if (isFirst) {
+			const firstLine = frame.text.split('\n')[0]!.trim().slice(0, 60);
+			if (firstLine) firstTitle = firstLine;
+		}
 		// Persist user message
 		this.ctx.storage.sql.exec(
 			'INSERT INTO events (ts, type, role, payload, meta) VALUES (?, ?, ?, ?, ?)',
@@ -277,6 +349,19 @@ export class SessionCell extends DurableObject<Env> {
 			JSON.stringify({ text: frame.text }),
 			null,
 		);
+		if (firstTitle) {
+			const sid = this.getSessionId();
+			if (sid) {
+				try {
+					const metaNs = (this.env as unknown as { META: DurableObjectNamespace }).META;
+					if (metaNs) {
+						(metaNs.getByName('index') as unknown as { touch: (o: unknown) => Promise<void> })
+							.touch({ id: sid, title: firstTitle })
+							.catch(() => {});
+					}
+				} catch { /* ignore */ }
+			}
+		}
 		// Emit the same msg frame replay would produce -- one event, one shape, both paths.
 		{
 			const userRowId = (this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }).id;

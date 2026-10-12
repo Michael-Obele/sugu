@@ -68,7 +68,7 @@ export class MetaCell extends DurableObject<Env> {
 		};
 	}
 
-	async touch(opts: { id: string; lastSeq?: number; title?: string }): Promise<void> {
+	async touch(opts: { id: string; lastSeq?: number; title?: string; model?: string }): Promise<void> {
 		const now = nowIso();
 		const sets: string[] = ['updated_at = ?'];
 		const params: unknown[] = [now];
@@ -80,12 +80,38 @@ export class MetaCell extends DurableObject<Env> {
 			sets.push('title = ?');
 			params.push(opts.title.slice(0, 60));
 		}
+		if (opts.model !== undefined) {
+			sets.push('model = ?');
+			params.push(opts.model);
+		}
 		params.push(opts.id);
 		this.ctx.storage.sql.exec(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`, ...params);
 	}
 
-	async remove(id: string): Promise<void> {
+	async get(id: string): Promise<SessionMeta | null> {
+		let row: Record<string, unknown> | undefined;
+		try {
+			row = this.ctx.storage.sql.exec('SELECT * FROM sessions WHERE id = ?', id).one() as unknown as Record<string, unknown>;
+		} catch {
+			return null;
+		}
+		if (!row) return null;
+		return rowToMeta(row);
+	}
+
+	async rename(id: string, title: string): Promise<SessionMeta | null> {
+		const trimmed = title.trim().slice(0, 60);
+		const now = nowIso();
+		this.ctx.storage.sql.exec('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?', trimmed, now, id);
+		const changed = this.ctx.storage.sql.exec('SELECT changes() as c').one() as unknown as { c: number };
+		if (changed.c === 0) return null;
+		return this.get(id);
+	}
+
+	async remove(id: string): Promise<boolean> {
 		this.ctx.storage.sql.exec('DELETE FROM sessions WHERE id = ?', id);
+		const changed = this.ctx.storage.sql.exec('SELECT changes() as c').one() as unknown as { c: number };
+		return changed.c > 0;
 	}
 
 	async getUsage(day: string): Promise<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | null> {
