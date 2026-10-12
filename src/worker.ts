@@ -186,16 +186,23 @@ export default {
 			return json(created, 201);
 		}
 
-		// GET /api/models — token-authed, overridable via SUGU_MODELS
+		// GET /api/models — token-authed, live catalogue with caching
 		if (url.pathname === '/api/models' && request.method === 'GET') {
 			const authErr = await requireUserAuth(request, env);
 			if (authErr) return authErr;
-			const models = getModels(env as unknown as { SUGU_MODELS?: string });
-			return json({ models });
+			const result = await getModels(
+				env as unknown as { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string },
+			);
+			return json(result);
 		}
 
 		// PATCH /api/sessions/:id — rename and/or model
-		if (url.pathname.startsWith('/api/sessions/') && request.method === 'PATCH' && !url.pathname.endsWith('/export') && !url.pathname.endsWith('/events')) {
+		if (
+			url.pathname.startsWith('/api/sessions/') &&
+			request.method === 'PATCH' &&
+			!url.pathname.endsWith('/export') &&
+			!url.pathname.endsWith('/events')
+		) {
 			const authErr = await requireUserAuth(request, env);
 			if (authErr) return authErr;
 			const id = url.pathname.slice('/api/sessions/'.length).split('/')[0] ?? '';
@@ -234,7 +241,12 @@ export default {
 		}
 
 		// DELETE /api/sessions/:id — idempotent
-		if (url.pathname.startsWith('/api/sessions/') && request.method === 'DELETE' && !url.pathname.endsWith('/export') && !url.pathname.endsWith('/events')) {
+		if (
+			url.pathname.startsWith('/api/sessions/') &&
+			request.method === 'DELETE' &&
+			!url.pathname.endsWith('/export') &&
+			!url.pathname.endsWith('/events')
+		) {
 			const authErr = await requireUserAuth(request, env);
 			if (authErr) return authErr;
 			const id = url.pathname.slice('/api/sessions/'.length).split('/')[0] ?? '';

@@ -37,17 +37,32 @@ function wsConnect(sessionId: string, token: string): Promise<WebSocket> {
 	});
 }
 
-function waitForFrames(ws: WebSocket, predicate: (frames: Record<string, unknown>[]) => boolean, timeoutMs = 5000): Promise<Record<string, unknown>[]> {
+function waitForFrames(
+	ws: WebSocket,
+	predicate: (frames: Record<string, unknown>[]) => boolean,
+	timeoutMs = 5000,
+): Promise<Record<string, unknown>[]> {
 	return new Promise((resolve, reject) => {
 		const frames: Record<string, unknown>[] = [];
 		const onMessage = (event: MessageEvent) => {
 			try {
 				frames.push(JSON.parse(event.data as string));
-				if (predicate(frames)) { cleanup(); resolve(frames); }
-			} catch { /* ignore */ }
+				if (predicate(frames)) {
+					cleanup();
+					resolve(frames);
+				}
+			} catch {
+				/* ignore */
+			}
 		};
-		const cleanup = () => { ws.removeEventListener('message', onMessage); clearTimeout(timer); };
-		const timer = setTimeout(() => { cleanup(); reject(new Error(`waitForFrames timeout, got: ${JSON.stringify(frames).slice(0, 2000)}`)); }, timeoutMs);
+		const cleanup = () => {
+			ws.removeEventListener('message', onMessage);
+			clearTimeout(timer);
+		};
+		const timer = setTimeout(() => {
+			cleanup();
+			reject(new Error(`waitForFrames timeout, got: ${JSON.stringify(frames).slice(0, 2000)}`));
+		}, timeoutMs);
 		ws.addEventListener('message', onMessage);
 	});
 }
@@ -303,12 +318,12 @@ describe('batch2a: GET /api/models', () => {
 		}
 	});
 
-	test('SUGU_MODELS override is honoured (unit)', () => {
+	test('SUGU_MODELS override is honoured (unit)', async () => {
 		const custom = JSON.stringify([{ id: 'custom/model', label: 'Custom', provider: 'openrouter' }]);
-		const models = getModels({ SUGU_MODELS: custom });
-		expect(models.length).toBe(1);
-		expect(models[0]!.id).toBe('custom/model');
-		expect(models[0]!.label).toBe('Custom');
+		const result = await getModels({ SUGU_MODELS: custom });
+		expect(result.models.length).toBe(1);
+		expect(result.models[0]!.id).toBe('custom/model');
+		expect(result.models[0]!.label).toBe('Custom');
 	});
 
 	test('requires auth', async () => {

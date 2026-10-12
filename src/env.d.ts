@@ -23,4 +23,8 @@ interface Env {
 	GITHUB_TOKEN: string;
 	/** Batch 2A: overridable model catalogue (JSON array). */
 	SUGU_MODELS?: string;
+	/** Batch 2C: catalogue source URL (default OpenRouter). */
+	SUGU_MODELS_URL?: string;
+	/** Batch 2C: comma-separated filter (id/label substring). */
+	SUGU_MODELS_FILTER?: string;
 }
