@@ -172,8 +172,8 @@ describe('session-cell integration', () => {
 		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
 
 		// Send first message and immediately send second
-		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'x'.repeat(80) }));
-		await new Promise((r) => setTimeout(r, 5));
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'x'.repeat(200) }));
+		await new Promise((r) => setTimeout(r, 10));
 		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'second-busy' }));
 
 		const frames = await waitForFrames(
@@ -208,8 +208,7 @@ describe('session-cell integration', () => {
 		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
 
 		// Send a longer message to have time to cancel
-		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'a'.repeat(100) }));
-		// Cancel quickly
+		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'a'.repeat(200) }));
 		await new Promise((r) => setTimeout(r, 15));
 		ws.send(JSON.stringify({ v: 1, t: 'cancel' }));
 
