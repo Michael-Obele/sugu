@@ -97,14 +97,14 @@ describe('session-cell integration', () => {
 
 		const frames = await waitForFrames(
 			ws,
-			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: ping'),
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
 			5000,
 		);
 
 		const tokenFrames = frames.filter((f) => f['t'] === 'token');
 		expect(tokenFrames.length).toBeGreaterThan(0);
 
-		const msgFrame = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: ping') as
+		const msgFrame = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response') as
 			Record<string, unknown> | undefined;
 		expect(msgFrame).toBeDefined();
 		// Token seq should match final msg seq
@@ -126,10 +126,10 @@ describe('session-cell integration', () => {
 		ws1.send(JSON.stringify({ v: 1, t: 'send', text: 'first' }));
 		const frames1 = await waitForFrames(
 			ws1,
-			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: first'),
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
 			5000,
 		);
-		const firstMsg = frames1.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: first') as Record<
+		const firstMsg = frames1.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response') as Record<
 			string,
 			unknown
 		>;
@@ -138,7 +138,7 @@ describe('session-cell integration', () => {
 		ws1.send(JSON.stringify({ v: 1, t: 'send', text: 'second' }));
 		const frames2 = await waitForFrames(
 			ws1,
-			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: second'),
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
 			5000,
 		);
 		// Collect all frames from second send (need to track from after first)
@@ -149,12 +149,12 @@ describe('session-cell integration', () => {
 		const ws2 = await wsConnect(sessionId, token, firstSeq);
 		const replayFrames = await waitForFrames(ws2, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
 
-		// Should contain second message but not first
+		// Should contain second message but not first (both are stub response, distinguish by seq)
 		const replayMsgs = replayFrames.filter((f) => f['t'] === 'msg') as Record<string, unknown>[];
-		const hasFirst = replayMsgs.some((f) => f['text'] === 'first' || f['text'] === 'echo: first');
-		const hasSecond = replayMsgs.some((f) => f['text'] === 'echo: second');
+		const hasFirstSeq = replayMsgs.some((f) => f['seq'] === firstSeq);
+		const hasSecond = replayMsgs.some((f) => (f['seq'] as number) > firstSeq);
 
-		expect(hasFirst).toBe(false);
+		expect(hasFirstSeq).toBe(false);
 		expect(hasSecond).toBe(true);
 
 		ws2.close();
@@ -188,7 +188,7 @@ describe('session-cell integration', () => {
 					(f) =>
 						f['t'] === 'msg' &&
 						typeof (f as Record<string, unknown>)['text'] === 'string' &&
-						((f as Record<string, unknown>)['text'] as string).startsWith('echo: x'),
+						((f as Record<string, unknown>)['text'] as string).startsWith('stub response'),
 				),
 			5000,
 		);
@@ -251,7 +251,7 @@ describe('session-cell integration', () => {
 					(f) =>
 						f['t'] === 'msg' &&
 						typeof (f as Record<string, unknown>)['text'] === 'string' &&
-						((f as Record<string, unknown>)['text'] as string).startsWith('echo: b'),
+						((f as Record<string, unknown>)['text'] as string).startsWith('stub response'),
 				),
 			5000,
 		);
@@ -262,7 +262,7 @@ describe('session-cell integration', () => {
 		const rows2 = (await snapRes2.json()) as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
 		expect(rows2.length).toBe(2);
 		expect(rows2[1]!.id).toBe(rows[1]!.id); // same row, updated
-		expect(JSON.parse(rows2[1]!.payload).text).toBe('echo: ' + 'b'.repeat(200));
+		expect(JSON.parse(rows2[1]!.payload).text).toBe('stub response');
 		const meta2 = rows2[1]!.meta ? JSON.parse(rows2[1]!.meta) : {};
 		expect(meta2.interrupted).toBe(false);
 
@@ -315,7 +315,7 @@ describe('session-cell integration', () => {
 					(f) =>
 						f['t'] === 'msg' &&
 						(f as Record<string, unknown>)['role'] === 'assistant' &&
-						(f as Record<string, unknown>)['text'] === 'echo: hello-live',
+						(f as Record<string, unknown>)['text'] === 'stub response',
 				),
 			5000,
 		);
@@ -324,7 +324,7 @@ describe('session-cell integration', () => {
 			(f) =>
 				f['t'] === 'msg' &&
 				(f as Record<string, unknown>)['role'] === 'assistant' &&
-				(f as Record<string, unknown>)['text'] === 'echo: hello-live',
+				(f as Record<string, unknown>)['text'] === 'stub response',
 		) as Record<string, unknown> | undefined;
 		expect(assistantMsg).toBeDefined();
 		expect((userMsg!['seq'] as number) < (assistantMsg!['seq'] as number)).toBe(true);
@@ -344,7 +344,7 @@ describe('session-cell integration', () => {
 		const frames = await waitForFrames(
 			ws,
 			(frames) =>
-				frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: busy-check') &&
+				frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response') &&
 				frames.some((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === false),
 			5000,
 		);
@@ -390,11 +390,13 @@ describe('session-cell integration', () => {
 		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
 
 		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'first-turn' }));
-		await waitForFrames(
+		const firstTurnFrames = await waitForFrames(
 			ws,
-			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: first-turn'),
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
 			5000,
 		);
+		const firstTurnMsg = firstTurnFrames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response') as Record<string, unknown>;
+		const firstTurnSeq = firstTurnMsg['seq'] as number;
 		// ensure the turn fully completed (state with busy:false) before second send
 		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === false), 3000);
 
@@ -411,14 +413,14 @@ describe('session-cell integration', () => {
 		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'second-turn' }));
 		const frames = await waitForFrames(
 			ws,
-			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: second-turn'),
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response' && (f as Record<string, unknown>)['seq'] as number > firstTurnSeq),
 			5000,
 		);
 		ws.removeEventListener('message', onMessage);
 
 		const busyErr = [...secondFrames, ...frames].find((f) => f['t'] === 'err' && (f as Record<string, unknown>)['code'] === 'busy');
 		expect(busyErr).toBeUndefined();
-		const secondMsg = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: second-turn');
+		const secondMsg = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response' && (f as Record<string, unknown>)['seq'] as number > firstTurnSeq);
 		expect(secondMsg).toBeDefined();
 
 		ws.close();
@@ -444,12 +446,12 @@ describe('session-cell integration', () => {
 		ws2.send(JSON.stringify({ v: 1, t: 'send', text: 'after-disconnect' }));
 		const frames2 = await waitForFrames(
 			ws2,
-			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: after-disconnect'),
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
 			5000,
 		);
 		const busyErr = frames2.find((f) => f['t'] === 'err' && (f as Record<string, unknown>)['code'] === 'busy');
 		expect(busyErr).toBeUndefined();
-		const okMsg = frames2.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: after-disconnect');
+		const okMsg = frames2.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response');
 		expect(okMsg).toBeDefined();
 
 		// First turn's row should be interrupted
@@ -513,12 +515,20 @@ describe('session-cell integration', () => {
 		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
 
 		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'busy-state-check' }));
-		const frames = await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === true), 3000);
+		const frames = await waitForFrames(
+			ws,
+			(frames) => frames.some((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === true),
+			3000,
+		);
 		const busyState = frames.find((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === true);
 		expect(busyState).toBeDefined();
 
 		// Wait for completion
-		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'echo: busy-state-check'), 5000);
+		await waitForFrames(
+			ws,
+			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
+			5000,
+		);
 		ws.close();
 		await new Promise((r) => setTimeout(r, 200));
 	});

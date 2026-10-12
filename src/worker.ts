@@ -142,6 +142,19 @@ export default {
 			return handleProbeRows(request, env);
 		}
 
+		// Quota — user token required, one row-read
+		if (url.pathname === '/api/quota' && request.method === 'GET') {
+			const authErr = await requireUserAuth(request, env);
+			if (authErr) return authErr;
+			try {
+				const meta = env.META.getByName('index');
+				const row = await meta.getUsage(new Date().toISOString().slice(0, 10));
+				return json(row ?? { day: new Date().toISOString().slice(0, 10), turns: 0, prompt_t: 0, compl_t: 0, cost_usd: 0, tools: 0 });
+			} catch {
+				return json({ day: new Date().toISOString().slice(0, 10), turns: 0, prompt_t: 0, compl_t: 0, cost_usd: 0, tools: 0 });
+			}
+		}
+
 		// Sessions — user token required
 		if (url.pathname === '/api/sessions' && request.method === 'GET') {
 			const authErr = await requireUserAuth(request, env);

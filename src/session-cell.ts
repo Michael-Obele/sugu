@@ -2,9 +2,19 @@ import { DurableObject } from 'cloudflare:workers';
 import { nowIso } from './shared/time';
 import { parseFrame } from './shared/contracts';
 import { verifyToken } from './server/auth';
+import { resolveAdapter } from './server/models';
 import type { Frame } from './shared/contracts';
+import type { Msg } from './server/models';
 
 type EnvWithSecrets = Env & { TOKEN_SECRET: string };
+type EnvWithModels = Env & {
+	TOKEN_SECRET: string;
+	DEEPSEEK_API_KEY?: string;
+	OPENROUTER_API_KEY?: string;
+	MODEL_STUB?: string;
+	MODEL_STUB_FAIL?: string;
+	MODEL_STUB_TEXT?: string;
+};
 
 export class SessionCell extends DurableObject<Env> {
 	private busy = false;
@@ -108,6 +118,16 @@ export class SessionCell extends DurableObject<Env> {
 		return n;
 	}
 
+	async getUsage(
+		day: string,
+	): Promise<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | null> {
+		const row = this.ctx.storage.sql
+			.exec('SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?', day)
+			.one() as unknown as { day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | undefined;
+		if (!row) return null;
+		return row;
+	}
+
 	async snapshotWithMeta(): Promise<{ id: number; type: string; role: string | null; payload: string; meta: string | null }[]> {
 		const cursor = this.ctx.storage.sql.exec('SELECT id, type, role, payload, meta FROM events ORDER BY id ASC');
 		return [...cursor] as unknown as { id: number; type: string; role: string | null; payload: string; meta: string | null }[];
@@ -140,10 +160,12 @@ export class SessionCell extends DurableObject<Env> {
 		const parsed = parseFrame(raw);
 		if (!parsed.ok) {
 			{
-			const msg = parsed.issues[0]?.message ?? 'bad frame';
-			const isTooLong = msg.includes('length') || msg.includes('max');
-			ws.send(JSON.stringify({ v: 1, t: 'err', code: 'bad_frame', message: isTooLong ? 'message too long (max 8000 chars)' : 'bad frame' }));
-		}
+				const msg = parsed.issues[0]?.message ?? 'bad frame';
+				const isTooLong = msg.includes('length') || msg.includes('max');
+				ws.send(
+					JSON.stringify({ v: 1, t: 'err', code: 'bad_frame', message: isTooLong ? 'message too long (max 8000 chars)' : 'bad frame' }),
+				);
+			}
 			return;
 		}
 		const frame = parsed.frame;
@@ -232,7 +254,11 @@ export class SessionCell extends DurableObject<Env> {
 			}
 		}
 		// Send fresh state
-try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone */ }
+		try {
+			ws.send(JSON.stringify(this.buildStateFrame()));
+		} catch {
+			/* socket gone */
+		}
 	}
 
 	private async handleSend(ws: WebSocket, frame: Extract<Frame, { t: 'send' }>): Promise<void> {
@@ -282,38 +308,62 @@ try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone 
 		this.pendingText = '';
 		// Server-authoritative busy: every socket learns a turn is running (finding 1).
 		try {
-	try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone */ }
+			try {
+				ws.send(JSON.stringify(this.buildStateFrame()));
+			} catch {
+				/* socket gone */
+			}
 		} catch {
 			// socket already gone — webSocketClose will handle abort
 		}
 		this.activeWs = ws;
 
-		// Stream echo as token frames (Phase 0: echo)
-		let echoText = `echo: ${frame.text}`;
-		// AR-8: no frame > 16 KB — truncate with marker if needed (finding 4)
-		if (echoText.length > 16000) echoText = echoText.slice(0, 15970) + '…[truncated]';
 		this.abortCtrl = new AbortController();
 		const signal = this.abortCtrl.signal;
 
-		// Simulate streaming: split into chunks
-		const chunks = chunkString(echoText, 8);
-		for (const chunk of chunks) {
-			if (signal.aborted) break;
-			this.pendingText += chunk;
-			try {
-				ws.send(JSON.stringify({ v: 1, t: 'token', seq: nextSeq, delta: chunk }));
-			} catch {
-				// socket closed mid-stream — abort like a disconnect
-				this.abortCtrl?.abort();
-				break;
+		// Build prompt: system + capped history
+		const messages = this.buildMessages(frame.text);
+		const model = 'deepseek-chat';
+
+		let finalText = '';
+		let promptTokens = 0;
+		let completionTokens = 0;
+		let costUsd = 0;
+		let modelError: string | null = null;
+
+		try {
+			const adapter = resolveAdapter(model, this.env as EnvWithModels);
+			for await (const chunk of adapter.stream({ model, messages, maxTokens: 4096 }, signal)) {
+				if (signal.aborted) break;
+				if (chunk.delta) {
+					// AR-8: no frame > 16 KB — truncate delta if needed
+					let delta = chunk.delta;
+					if (finalText.length + delta.length > 16000) {
+						delta = delta.slice(0, 16000 - finalText.length - 14) + '…[truncated]';
+					}
+					if (delta.length === 0) continue;
+					finalText += delta;
+					this.pendingText = finalText;
+					try {
+						ws.send(JSON.stringify({ v: 1, t: 'token', seq: nextSeq, delta }));
+					} catch {
+						this.abortCtrl?.abort();
+						break;
+					}
+				}
+				if (chunk.usage) {
+					promptTokens = chunk.usage.promptTokens ?? 0;
+					completionTokens = chunk.usage.completionTokens ?? 0;
+					costUsd = chunk.usage.costUsd ?? 0;
+				}
+				// toolCall is out of scope for Task 4 — ignored
 			}
-			// deliberate exception to the 'no timers in the DO' rule: armed only
-			// while a turn is in flight, so it cannot block idle hibernation;
-			// removing it makes cancel and busy-rejection unreachable because the
-			// chunk loop would never yield to the DO message queue and
-			// webSocketMessage for cancel/second send could never be dispatched.
-			await new Promise<void>((resolve) => setTimeout(resolve, 5));
-			if (signal.aborted) break;
+		} catch (e) {
+			if (signal.aborted) {
+				// Aborted — will be handled as interrupted below
+			} else {
+				modelError = e instanceof Error ? e.message : String(e);
+			}
 		}
 
 		if (signal.aborted) {
@@ -344,17 +394,71 @@ try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone 
 			this.pendingText = '';
 			this.pendingAssistantId = null;
 			this.abortCtrl = null;
-	try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone */ }
+			if (this.activeWs === ws) this.activeWs = null;
+			try {
+				ws.send(JSON.stringify(this.buildStateFrame()));
+			} catch {
+				/* socket gone */
+			}
 			return;
 		}
 
-		// Update reserved row with final text, interrupted:false
+		if (modelError) {
+			// Model failure: persist partial (if any) as interrupted, send err, clear busy
+			const textToPersist = finalText || this.pendingText;
+			this.ctx.storage.sql.exec(
+				'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
+				JSON.stringify({ text: textToPersist }),
+				JSON.stringify({ interrupted: true }),
+				this.pendingAssistantId,
+			);
+			try {
+				ws.send(
+					JSON.stringify({
+						v: 1,
+						t: 'msg',
+						seq: this.pendingAssistantId,
+						id: this.pendingAssistantId,
+						role: 'assistant',
+						text: textToPersist,
+						interrupted: true,
+					}),
+				);
+			} catch {
+				/* socket gone */
+			}
+			try {
+				ws.send(JSON.stringify({ v: 1, t: 'err', code: 'model', message: 'model error' }));
+			} catch {
+				/* socket gone */
+			}
+			// Record usage even on failure (turn still counts)
+			this.recordUsage(0, 0, 0);
+			this.busy = false;
+			this.pendingSeq = null;
+			this.pendingText = '';
+			this.pendingAssistantId = null;
+			this.abortCtrl = null;
+			if (this.activeWs === ws) this.activeWs = null;
+			try {
+				ws.send(JSON.stringify(this.buildStateFrame()));
+			} catch {
+				/* socket gone */
+			}
+			return;
+		}
+
+		// Success: persist final text, interrupted:false — then busy=false (order matters: see reservation comment)
+		// AR-8: truncate final if needed
+		if (finalText.length > 16000) finalText = finalText.slice(0, 15970) + '…[truncated]';
 		this.ctx.storage.sql.exec(
 			'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
-			JSON.stringify({ text: echoText }),
+			JSON.stringify({ text: finalText }),
 			JSON.stringify({ interrupted: false }),
 			this.pendingAssistantId,
 		);
+		// Record usage: one upsert per turn (AR-6: ≤8 row-writes/turn)
+		this.recordUsage(promptTokens, completionTokens, costUsd);
 		try {
 			ws.send(
 				JSON.stringify({
@@ -363,7 +467,7 @@ try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone 
 					seq: this.pendingAssistantId,
 					id: this.pendingAssistantId,
 					role: 'assistant',
-					text: echoText,
+					text: finalText,
 				}),
 			);
 		} catch {
@@ -375,12 +479,86 @@ try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone 
 		this.pendingAssistantId = null;
 		this.abortCtrl = null;
 		if (this.activeWs === ws) this.activeWs = null;
-		try { ws.send(JSON.stringify(this.buildStateFrame())); } catch { /* socket gone */ }
+		try {
+			ws.send(JSON.stringify(this.buildStateFrame()));
+		} catch {
+			/* socket gone */
+		}
 	}
 
 	private async handleCancel(_ws: WebSocket): Promise<void> {
 		if (!this.busy || !this.abortCtrl) return;
 		this.abortCtrl.abort();
+	}
+
+	private buildMessages(currentText: string): Msg[] {
+		// Caps: last 20 messages, total prompt ≤ 24k chars (protects CPU/payload budget AR-4/AR-5).
+		// 20 messages ≈ ~10 turns; 24k chars ≈ ~6k tokens, well within context windows.
+		const MAX_HISTORY = 20;
+		const MAX_PROMPT_CHARS = 24_000;
+		const SYSTEM_PROMPT = 'You are Sugu, a helpful phone-first assistant. Be concise.';
+
+		const messages: Msg[] = [{ role: 'system', content: SYSTEM_PROMPT }];
+
+		// Read recent history from events (user + assistant only)
+		const cursor = this.ctx.storage.sql.exec(
+			"SELECT type, role, payload FROM events WHERE type IN ('user', 'assistant') ORDER BY id DESC LIMIT ?",
+			MAX_HISTORY,
+		);
+		const rows = [...cursor].reverse() as unknown as { type: string; role: string | null; payload: string }[];
+		for (const row of rows) {
+			try {
+				const payload = JSON.parse(row.payload) as { text: string };
+				const content = payload.text ?? '';
+				if (!content) continue;
+				// Skip the just-inserted user message — we add currentText separately to avoid double
+				// (the SELECT includes it, but we want it as the final user turn)
+				// Instead, include all history and append currentText as last user message
+				const role = (row.role as Msg['role']) ?? 'user';
+				if (role === 'user' || role === 'assistant') {
+					messages.push({ role, content });
+				}
+			} catch {
+				// ignore malformed
+			}
+		}
+		// The SELECT already includes the current user message; avoid duplicating it.
+		// If last message is already the current text as user, don't append again.
+		const last = messages[messages.length - 1];
+		if (!last || last.role !== 'user' || last.content !== currentText) {
+			messages.push({ role: 'user', content: currentText });
+		}
+
+		// Enforce total prompt size cap: drop oldest non-system messages first
+		let total = messages.reduce((sum, m) => sum + m.content.length, 0);
+		while (total > MAX_PROMPT_CHARS && messages.length > 2) {
+			// Remove oldest non-system message (index 1)
+			const removed = messages.splice(1, 1)[0]!;
+			total -= removed.content.length;
+		}
+		return messages;
+	}
+
+	private recordUsage(promptT: number, complT: number, costUsd: number): void {
+		const day = new Date().toISOString().slice(0, 10);
+		this.ctx.storage.sql.exec(
+			'INSERT INTO usage (day, turns, prompt_t, compl_t, cost_usd, tools) VALUES (?, 1, ?, ?, ?, 0) ON CONFLICT(day) DO UPDATE SET turns = turns + 1, prompt_t = prompt_t + excluded.prompt_t, compl_t = compl_t + excluded.compl_t, cost_usd = cost_usd + excluded.cost_usd',
+			day,
+			promptT,
+			complT,
+			costUsd,
+		);
+		// Also update global quota in MetaCell for /api/quota (best-effort, no await)
+		try {
+			const metaNs = (this.env as unknown as { META: DurableObjectNamespace }).META;
+			if (metaNs) {
+				(metaNs.getByName('index') as unknown as { recordUsage: (d: string, p: number, c: number, cost: number) => Promise<void> })
+					.recordUsage(day, promptT, complT, costUsd)
+					.catch(() => {});
+			}
+		} catch {
+			// ignore — quota aggregation is best-effort
+		}
 	}
 
 	private buildStateFrame(): Frame {

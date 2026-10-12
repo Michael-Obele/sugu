@@ -16,6 +16,16 @@ export class MetaCell extends DurableObject<Env> {
 				archived   INTEGER NOT NULL DEFAULT 0
 			)
 		`);
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS usage (
+				day       TEXT PRIMARY KEY,
+				turns     INTEGER NOT NULL DEFAULT 0,
+				prompt_t  INTEGER NOT NULL DEFAULT 0,
+				compl_t   INTEGER NOT NULL DEFAULT 0,
+				cost_usd  REAL    NOT NULL DEFAULT 0,
+				tools     INTEGER NOT NULL DEFAULT 0
+			)
+		`);
 	}
 
 	async ping(): Promise<string> {
@@ -76,6 +86,22 @@ export class MetaCell extends DurableObject<Env> {
 
 	async remove(id: string): Promise<void> {
 		this.ctx.storage.sql.exec('DELETE FROM sessions WHERE id = ?', id);
+	}
+
+	async getUsage(day: string): Promise<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | null> {
+		const row = this.ctx.storage.sql.exec('SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?', day).one() as unknown as { day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | undefined;
+		if (!row) return null;
+		return row;
+	}
+
+	async recordUsage(day: string, promptT: number, complT: number, costUsd: number): Promise<void> {
+		this.ctx.storage.sql.exec(
+			'INSERT INTO usage (day, turns, prompt_t, compl_t, cost_usd, tools) VALUES (?, 1, ?, ?, ?, 0) ON CONFLICT(day) DO UPDATE SET turns = turns + 1, prompt_t = prompt_t + excluded.prompt_t, compl_t = compl_t + excluded.compl_t, cost_usd = cost_usd + excluded.cost_usd',
+			day,
+			promptT,
+			complT,
+			costUsd,
+		);
 	}
 }
 

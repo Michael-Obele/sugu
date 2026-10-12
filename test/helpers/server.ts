@@ -12,6 +12,10 @@ function randomHex(bytes = 20): string {
 	return randomBytes(bytes).toString('hex');
 }
 
+// Test seam: MODEL_STUB=1 selects the deterministic stub adapter in src/server/models.ts.
+// This var is dev-only and never set in production (wrangler.jsonc / .dev.vars / secrets).
+// See src/server/models.ts resolveAdapter for the gate.
+
 // Generated once per test run so the suite is self-contained (no .dev.vars needed).
 // Exported so test files can sign tokens with the same secret the dev server uses.
 export const TEST_SECRETS = {
@@ -115,6 +119,8 @@ export async function startDevServer(opts?: { port?: number }): Promise<DevServe
 			`TOKEN_SECRET:${TEST_SECRETS.TOKEN_SECRET}`,
 			'--var',
 			`ADMIN_TOKEN:${TEST_SECRETS.ADMIN_TOKEN}`,
+			'--var',
+			'MODEL_STUB:1',
 		],
 		cwd: PROJECT_ROOT,
 		env,
