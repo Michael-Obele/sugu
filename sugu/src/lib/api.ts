@@ -18,6 +18,26 @@ export type SessionMeta = {
 	archived: boolean;
 };
 
+export type ModelInfo = {
+	id: string;
+	label: string;
+	provider: 'deepseek' | 'openrouter';
+	contextLength?: number;
+	price?: { promptPerM: number; completionPerM: number };
+	priceKnown: boolean;
+};
+
+export type ModelsResponse = {
+	models: ModelInfo[];
+	source: 'live' | 'cache' | 'fallback';
+	fetchedAt: string;
+};
+
+export type EventsPage = {
+	frames: unknown[];
+	hasMore: boolean;
+};
+
 let token: string | null = null;
 
 function hasLocalStorage(): boolean {
@@ -121,6 +141,92 @@ export async function createSession(title?: string, model?: string): Promise<Ses
 		body: JSON.stringify({ title, model })
 	});
 	return handleResponse<SessionMeta>(res);
+}
+
+export async function patchSession(
+	id: string,
+	patch: { title?: string; model?: string }
+): Promise<SessionMeta> {
+	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+		method: 'PATCH',
+		headers: { 'content-type': 'application/json', ...authHeaders() },
+		body: JSON.stringify(patch)
+	});
+	return handleResponse<SessionMeta>(res);
+}
+
+export async function deleteSession(id: string): Promise<{ ok: boolean }> {
+	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+		method: 'DELETE',
+		headers: { ...authHeaders() }
+	});
+	return handleResponse<{ ok: boolean }>(res);
+}
+
+export async function getModels(): Promise<ModelsResponse> {
+	const res = await fetch('/api/models', {
+		headers: { ...authHeaders() }
+	});
+	return handleResponse<ModelsResponse>(res);
+}
+
+export async function getEventsPage(
+	id: string,
+	opts?: { before?: number; limit?: number }
+): Promise<EventsPage> {
+	const params = new URLSearchParams();
+	if (opts?.before !== undefined) params.set('before', String(opts.before));
+	if (opts?.limit !== undefined) params.set('limit', String(opts.limit));
+	const qs = params.toString() ? `?${params.toString()}` : '';
+	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/events${qs}`, {
+		headers: { ...authHeaders() }
+	});
+	return handleResponse<EventsPage>(res);
+}
+
+export async function exportSession(id: string): Promise<string> {
+	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/export`, {
+		headers: { ...authHeaders() }
+	});
+	if (res.status === 401) {
+		setToken(null);
+		if (onUnauthorized) onUnauthorized();
+		throw { status: 401, message: 'Unauthorized' } as ApiError;
+	}
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+		throw {
+			status: res.status,
+			message: (body['error'] as string) || `Export failed: ${res.status}`
+		} as ApiError;
+	}
+	return await res.text();
+}
+
+export function downloadJsonl(filename: string, text: string): void {
+	const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = filename;
+	document.body.appendChild(a);
+	a.click();
+	a.remove();
+	URL.revokeObjectURL(url);
+}
+
+export async function getQuota(): Promise<{
+	day: string;
+	turns: number;
+	prompt_t: number;
+	compl_t: number;
+	cost_usd: number;
+	tools: number;
+}> {
+	const res = await fetch('/api/quota', {
+		headers: { ...authHeaders() }
+	});
+	return handleResponse(res);
 }
 
 export function logout(): void {

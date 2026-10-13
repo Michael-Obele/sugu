@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { Button } from '$lib/components/ui/button';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import SendIcon from '@lucide/svelte/icons/send';
+	import SquareIcon from '@lucide/svelte/icons/square';
 
 	type Props = {
 		value?: string;
@@ -60,7 +62,7 @@
 		bind:value
 		onkeydown={handleKeydown}
 		oninput={handleInput}
-		placeholder={busy ? 'Waiting for response\u2026' : 'Message\u2026'}
+		placeholder={busy ? 'Waiting for response…' : 'Message…'}
 		disabled={busy || disabled}
 		rows={1}
 		class={cn(
@@ -78,6 +80,7 @@
 			class="min-h-[44px] min-w-[44px]"
 			aria-label="Stop generating"
 		>
+			<SquareIcon class="size-4" />
 			Stop
 		</Button>
 	{:else}
@@ -87,6 +90,7 @@
 			class="min-h-[44px] min-w-[44px]"
 			aria-label="Send message"
 		>
+			<SendIcon class="size-4" />
 			Send
 		</Button>
 	{/if}

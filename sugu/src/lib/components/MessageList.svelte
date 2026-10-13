@@ -1,7 +1,19 @@
 <script lang="ts">
-	import MessageBubble from './MessageBubble.svelte';
-	import ToolRow from './ToolRow.svelte';
+	import { cn } from '$lib/utils';
+	import { createAnnouncer } from '$lib/announce';
 	import type { DisplayMessage, ToolEntry, ErrEntry } from '$lib/frames';
+	import * as MessageScroller from '$lib/components/ui/message-scroller/index.js';
+	import * as Message from '$lib/components/ui/message/index.js';
+	import * as Bubble from '$lib/components/ui/bubble/index.js';
+	import * as Marker from '$lib/components/ui/marker/index.js';
+	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
+	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
 
 	type Props = {
 		messages: DisplayMessage[];
@@ -13,6 +25,9 @@
 			status: 'pending' | 'sent' | 'failed';
 			error?: string;
 		}[];
+		hasMore?: boolean;
+		loadingEarlier?: boolean;
+		onLoadEarlier?: () => void;
 		onRerun?: (text: string) => void;
 		onRetryPending?: (id: string) => void;
 		onDismissPending?: (id: string) => void;
@@ -23,6 +38,9 @@
 		tools = [],
 		errs = [],
 		pendingSends = [],
+		hasMore = false,
+		loadingEarlier = false,
+		onLoadEarlier,
 		onRerun,
 		onRetryPending,
 		onDismissPending
@@ -32,114 +50,202 @@
 		return tools.filter((t) => t.seq === seq);
 	}
 
-	let scrollEl: HTMLDivElement | null = $state(null);
-	let showJump = $state(false);
-	let userScrolledUp = $state(false);
-
-	function handleScroll(): void {
-		if (!scrollEl) return;
-		const { scrollTop, scrollHeight, clientHeight } = scrollEl;
-		const nearBottom = scrollHeight - scrollTop - clientHeight < 80;
-		showJump = !nearBottom && messages.length > 0;
-		userScrolledUp = !nearBottom;
-	}
-
-	function jumpToLatest(): void {
-		if (!scrollEl) return;
-		scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
-		showJump = false;
-		userScrolledUp = false;
-	}
-
-	function maybeAutoscroll(): void {
-		if (!scrollEl || userScrolledUp) return;
-		scrollEl.scrollTop = scrollEl.scrollHeight;
-	}
-
-	let prevLen = $state(0);
-	let prevLastText = $state('');
-	function checkAutoscroll(): string {
-		const len = messages.length;
-		const lastText = messages[len - 1]?.text ?? '';
-		if (len !== prevLen || lastText !== prevLastText) {
-			prevLen = len;
-			prevLastText = lastText;
-			requestAnimationFrame(maybeAutoscroll);
+	// aria-live throttling — reuse tested logic, driven via render-time function (no $effect)
+	const announcer = createAnnouncer(1000);
+	let announceText = $state('');
+	let prevText = $state('');
+	let prevStreaming: boolean | undefined = $state(undefined);
+	function updateAnnounce(currentText: string, isStreaming: boolean): string {
+		if (currentText === prevText && isStreaming === prevStreaming) return announceText;
+		prevText = currentText;
+		prevStreaming = isStreaming;
+		if (!isStreaming) {
+			announcer.flush();
+			announceText = currentText;
+		} else {
+			announceText = announcer.throttled(currentText);
 		}
-		return '';
+		return announceText;
+	}
+
+	function truncate(text: string, max = 800): { display: string; truncated: boolean } {
+		if (text.length <= max) return { display: text, truncated: false };
+		return { display: text.slice(0, max), truncated: true };
 	}
 </script>
 
-<div
-	bind:this={scrollEl}
-	onscroll={handleScroll}
-	class="flex flex-1 flex-col gap-3 overflow-y-auto p-4"
-	role="log"
-	aria-live="polite"
-	aria-relevant="additions"
->
-	{#each messages as msg (msg.seq)}
-		<span class="hidden" aria-hidden="true">{checkAutoscroll()}</span>
-		<MessageBubble
-			role={msg.role}
-			text={msg.text}
-			streaming={msg.streaming}
-			interrupted={msg.interrupted}
-			onRerun={msg.interrupted && onRerun ? () => onRerun(msg.text) : undefined}
-		/>
-		{#each toolsForSeq(msg.seq) as tool (tool.runId)}
-			<ToolRow name={tool.name} status={tool.status} summary={tool.summary} />
-		{/each}
-	{:else}
-		<p class="py-8 text-center text-sm text-muted-foreground">No messages yet \u2014 say hello</p>
-	{/each}
-
-	{#each pendingSends as p (p.id)}
-		<div
-			class={p.status === 'failed'
-				? 'flex items-center gap-2 rounded-xl border border-destructive/50 bg-card px-4 py-3 text-sm'
-				: 'flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm opacity-60'}
-		>
-			<span class="flex-1 truncate">{p.text}</span>
-			{#if p.status === 'pending'}
-				<span class="text-xs text-muted-foreground">Sending\u2026</span>
-			{:else if p.status === 'failed'}
-				<span class="text-xs text-destructive">{p.error ?? 'Failed'}</span>
-				<button
-					type="button"
-					onclick={() => onRetryPending?.(p.id)}
-					class="min-h-[44px] min-w-[44px] rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-					>Retry</button
-				>
-				<button
-					type="button"
-					onclick={() => onDismissPending?.(p.id)}
-					class="min-h-[44px] min-w-[44px] rounded-md border px-2 py-1 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-					>Dismiss</button
-				>
-			{/if}
+<div class="flex flex-1 flex-col min-h-0">
+	{#if hasMore}
+		<div class="flex justify-center p-2">
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={loadingEarlier}
+				onclick={() => onLoadEarlier?.()}
+				class="min-h-[44px] gap-1.5"
+			>
+				{#if loadingEarlier}
+					<Spinner class="size-4" />
+					Loading…
+				{:else}
+					<ChevronUpIcon class="size-4" />
+					Load earlier
+				{/if}
+			</Button>
 		</div>
-	{/each}
+	{/if}
 
-	{#each errs as e (e.at)}
-		<div
-			role="alert"
-			class="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+	<MessageScroller.Root class="flex-1 min-h-0">
+		<MessageScroller.Viewport class="p-4">
+			<MessageScroller.Content class="gap-3">
+				{#each messages as msg (msg.seq)}
+					<MessageScroller.Item>
+						<Message.Root align={msg.role === 'user' ? 'end' : 'start'}>
+							<Bubble.Root
+								variant={msg.role === 'user'
+									? 'default'
+									: msg.interrupted
+										? 'destructive'
+										: 'secondary'}
+								align={msg.role === 'user' ? 'end' : 'start'}
+								class={cn(msg.streaming && 'streaming', msg.interrupted && 'border-dashed')}
+							>
+								<Bubble.Content class="break-words whitespace-pre-wrap">
+									<span class="sr-only" aria-live="polite" aria-atomic="true"
+										>{updateAnnounce(msg.text, !!msg.streaming)}</span
+									>
+									{msg.text}
+									{#if msg.streaming}
+										<span
+											class="inline-block w-2 h-4 bg-foreground/30 animate-pulse ml-0.5 align-text-bottom"
+											aria-hidden="true"
+										></span>
+									{/if}
+								</Bubble.Content>
+							</Bubble.Root>
+						</Message.Root>
+
+						{#if msg.interrupted}
+							<Marker.Root variant="default" class="gap-2 py-1">
+								<AlertTriangleIcon class="size-4 text-warning" />
+								<span class="text-xs text-warning">Interrupted</span>
+								{#if onRerun}
+									<Button
+										variant="outline"
+										size="xs"
+										onclick={() => onRerun(msg.text)}
+										class="min-h-[32px] gap-1 ml-2"
+									>
+										<RotateCcwIcon class="size-3" />
+										Re-run
+									</Button>
+								{/if}
+							</Marker.Root>
+						{/if}
+
+						{#each toolsForSeq(msg.seq) as tool (tool.runId)}
+							{@const trunc = truncate(tool.summary ?? '', 800)}
+							<Collapsible.Root class="w-full">
+								<Collapsible.Trigger
+									class={cn(
+										'flex min-h-[44px] w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm',
+										tool.status === 'failed'
+											? 'border-destructive/50 bg-destructive/10 text-destructive'
+											: tool.status === 'running'
+												? 'border-border bg-card text-muted-foreground'
+												: 'border-border bg-card text-muted-foreground'
+									)}
+								>
+									<span class="font-mono text-xs truncate">ran `{tool.name}`</span>
+									{#if tool.status === 'ok'}
+										<Badge variant="secondary" class="ml-auto text-xs">ok</Badge>
+									{:else if tool.status === 'failed'}
+										<Badge variant="destructive" class="ml-auto text-xs">failed</Badge>
+									{:else}
+										<Spinner class="ml-auto size-3" />
+									{/if}
+									<ChevronDownIcon
+										class="size-4 shrink-0 opacity-50 group-data-[state=open]/collapsible:rotate-180 transition-transform"
+									/>
+								</Collapsible.Trigger>
+								{#if tool.summary}
+									<Collapsible.Content class="mt-1 rounded-md border bg-card p-3 text-sm">
+										<pre class="whitespace-pre-wrap break-words text-xs">{trunc.display}</pre>
+										{#if trunc.truncated}
+											<p class="mt-2 text-xs text-muted-foreground">
+												Output truncated — {tool.summary.length - 800} chars hidden
+											</p>
+										{/if}
+									</Collapsible.Content>
+								{/if}
+							</Collapsible.Root>
+						{/each}
+					</MessageScroller.Item>
+				{:else}
+					<div class="py-8 text-center">
+						<p class="text-sm text-muted-foreground">No messages yet — say hello</p>
+					</div>
+				{/each}
+
+				{#each pendingSends as p (p.id)}
+					<MessageScroller.Item>
+						<div
+							class={cn(
+								'flex items-center gap-2 rounded-xl border px-4 py-3 text-sm',
+								p.status === 'failed'
+									? 'border-destructive/50 bg-destructive/10'
+									: 'border-border bg-card opacity-60'
+							)}
+						>
+							<span class="flex-1 truncate">{p.text}</span>
+							{#if p.status === 'pending'}
+								<span class="flex items-center gap-1.5 text-xs text-muted-foreground">
+									<Spinner class="size-3" />
+									Sending…
+								</span>
+							{:else if p.status === 'failed'}
+								<span class="text-xs text-destructive">{p.error ?? 'Failed'}</span>
+								<Button
+									variant="default"
+									size="xs"
+									onclick={() => onRetryPending?.(p.id)}
+									class="min-h-[32px]"
+								>
+									Retry
+								</Button>
+								<Button
+									variant="outline"
+									size="xs"
+									onclick={() => onDismissPending?.(p.id)}
+									class="min-h-[32px]"
+								>
+									Dismiss
+								</Button>
+							{/if}
+						</div>
+					</MessageScroller.Item>
+				{/each}
+
+				{#each errs as e (e.at)}
+					<MessageScroller.Item>
+						<div
+							role="alert"
+							class="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+						>
+							<span class="font-medium">{e.code}:</span>
+							{e.message}
+						</div>
+					</MessageScroller.Item>
+				{/each}
+			</MessageScroller.Content>
+		</MessageScroller.Viewport>
+		<MessageScroller.Button
+			variant="secondary"
+			size="icon-sm"
+			class="rounded-full shadow-lg"
+			aria-label="Jump to latest"
 		>
-			<span class="font-medium">{e.code}:</span>
-			{e.message}
-		</div>
-	{/each}
+			<ChevronDownIcon class="size-4" />
+		</MessageScroller.Button>
+	</MessageScroller.Root>
 </div>
-
-{#if showJump}
-	<div class="sticky bottom-0 flex justify-center p-2">
-		<button
-			type="button"
-			onclick={jumpToLatest}
-			class="min-h-[44px] rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-		>
-			Jump to latest \u2193
-		</button>
-	</div>
-{/if}

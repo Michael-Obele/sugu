@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 
 	type Props = {
 		name: string;
@@ -9,41 +13,49 @@
 
 	let { name, status, summary }: Props = $props();
 
-	let expanded = $state(false);
-	let isFailed = $derived(status === 'failed');
+	function truncate(
+		text: string,
+		max = 800
+	): { display: string; truncated: boolean; hidden: number } {
+		if (text.length <= max) return { display: text, truncated: false, hidden: 0 };
+		return { display: text.slice(0, max), truncated: true, hidden: text.length - max };
+	}
+
+	let trunc = $derived(summary ? truncate(summary) : null);
 </script>
 
-<button
-	type="button"
-	onclick={() => {
-		if (isFailed) expanded = !expanded;
-	}}
-	disabled={!isFailed}
-	class={cn(
-		'flex min-h-[44px] w-full min-w-[44px] items-center gap-2 rounded-md border px-3 py-2 text-left text-sm',
-		isFailed
-			? 'border-warning/50 bg-warning/10 text-warning-foreground'
-			: 'border-border bg-card text-muted-foreground',
-		isFailed && 'cursor-pointer'
-	)}
-	aria-expanded={isFailed ? expanded : undefined}
->
-	<span class="font-mono text-xs">ran `{name}`</span>
-	{#if status === 'ok'}
-		<span class="text-xs">✓</span>
-	{/if}
-	{#if status === 'failed'}
-		<span class="text-xs">✗</span>
-	{/if}
-	{#if summary}
-		<span class="ml-auto text-xs opacity-70">{summary}</span>
-	{/if}
-</button>
-
-{#if isFailed && expanded && summary}
-	<div
-		class="mt-1 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground"
+<Collapsible.Root class="w-full">
+	<Collapsible.Trigger
+		class={cn(
+			'flex min-h-[44px] w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm',
+			status === 'failed'
+				? 'border-destructive/50 bg-destructive/10 text-destructive'
+				: 'border-border bg-card text-muted-foreground'
+		)}
+		aria-label={`Tool ${name} ${status}`}
 	>
-		{summary}
-	</div>
-{/if}
+		<span class="font-mono text-xs truncate">ran `{name}`</span>
+		{#if status === 'ok'}
+			<Badge variant="secondary" class="ml-auto text-xs">ok</Badge>
+		{:else if status === 'failed'}
+			<Badge variant="destructive" class="ml-auto text-xs">failed</Badge>
+		{:else}
+			<Spinner class="ml-auto size-3" />
+		{/if}
+		{#if summary}
+			<ChevronDownIcon
+				class="size-4 shrink-0 opacity-50 group-data-[state=open]/collapsible:rotate-180 transition-transform"
+			/>
+		{/if}
+	</Collapsible.Trigger>
+	{#if summary && trunc}
+		<Collapsible.Content class="mt-1 rounded-md border bg-card p-3 text-sm">
+			<pre class="whitespace-pre-wrap break-words text-xs">{trunc.display}</pre>
+			{#if trunc.truncated}
+				<p class="mt-2 text-xs text-muted-foreground">
+					Output truncated — {trunc.hidden} chars hidden
+				</p>
+			{/if}
+		</Collapsible.Content>
+	{/if}
+</Collapsible.Root>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 
 	type Props = {
 		state: 'connecting' | 'open' | 'reconnecting' | 'closed';
@@ -10,21 +11,12 @@
 	let visible = $derived(state === 'reconnecting' || state === 'connecting');
 	let label = $derived(
 		state === 'reconnecting'
-			? 'Reconnecting\u2026'
+			? 'Reconnecting…'
 			: state === 'connecting'
-				? 'Connecting\u2026'
+				? 'Connecting…'
 				: state === 'closed'
 					? 'Offline'
 					: ''
-	);
-	let dotClass = $derived(
-		state === 'open'
-			? 'bg-emerald-500'
-			: state === 'reconnecting'
-				? 'bg-warning'
-				: state === 'connecting'
-					? 'bg-muted-foreground'
-					: 'bg-destructive'
 	);
 </script>
 
@@ -37,8 +29,7 @@
 			'safe-top'
 		)}
 	>
-		<span class="h-2 w-2 animate-pulse rounded-full bg-warning-foreground" aria-hidden="true"
-		></span>
+		<Spinner class="size-4 text-warning-foreground" />
 		{label}
 	</div>
 {:else if state === 'closed'}
@@ -48,6 +39,6 @@
 		class="flex h-8 items-center justify-center gap-2 bg-destructive px-4 text-sm font-medium text-destructive-foreground safe-top"
 	>
 		<span class="h-2 w-2 rounded-full bg-destructive-foreground" aria-hidden="true"></span>
-		Offline \u2014 will reconnect
+		Offline — will reconnect
 	</div>
 {/if}

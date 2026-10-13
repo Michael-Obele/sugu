@@ -1,11 +1,35 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { getToken, logout } from '$lib/api';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+	import {
+		getToken,
+		logout,
+		getModels,
+		patchSession,
+		exportSession,
+		downloadJsonl,
+		listSessions
+	} from '$lib/api';
+	import type { ModelInfo, SessionMeta } from '$lib/api';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
+	import ModelPicker from '$lib/components/ModelPicker.svelte';
+	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import LogOutIcon from '@lucide/svelte/icons/log-out';
+	import DownloadIcon from '@lucide/svelte/icons/download';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
 
-	let model = $state('deepseek-chat');
+	let sessions = $state<SessionMeta[]>([]);
+	let selectedId = $state('');
+	let models = $state<ModelInfo[]>([]);
+	let modelsSource = $state('fallback');
+	let selectedModel = $state('');
+	let savingModel = $state(false);
+	let modelError: string | null = $state(null);
+	let modelSuccess: string | null = $state(null);
+
 	let quota: {
 		day: string;
 		turns: number;
@@ -15,35 +39,82 @@
 	} | null = $state(null);
 	let quotaError: string | null = $state(null);
 
-	onMount(() => {
+	let exportAllLoading = $state(false);
+
+	onMount(async () => {
+		const token = getToken();
+		if (!token) {
+			goto('/login');
+			return;
+		}
 		try {
-			const stored = localStorage.getItem('sugu_model');
-			if (stored) model = stored;
+			sessions = await listSessions();
+			if (sessions.length > 0) selectedId = sessions[0]!.id;
 		} catch {
 			// ignore
 		}
 		try {
-			const token = getToken();
-			if (token) {
-				fetch('/api/quota', { headers: { Authorization: `Bearer ${token}` } })
-					.then((r) => (r.ok ? r.json() : null))
-					.then((data) => {
-						if (data) quota = data;
-					})
-					.catch(() => {
-						quotaError = 'quota unavailable';
-					});
-			}
+			const res = await getModels();
+			models = res.models;
+			modelsSource = res.source;
 		} catch {
-			// ignore
+			// keep fallback
+		}
+		try {
+			const res = await fetch('/api/quota', { headers: { Authorization: `Bearer ${token}` } });
+			if (res.ok) quota = await res.json();
+			else quotaError = 'quota unavailable';
+		} catch {
+			quotaError = 'quota unavailable';
+		}
+		// Set selectedModel from first session's model if available
+		if (sessions.length > 0) {
+			const first = sessions.find((s) => s.id === selectedId);
+			if (first) selectedModel = first.model;
 		}
 	});
 
-	function handleModelChange(): void {
+	function handleSessionChange(id: string): void {
+		selectedId = id;
+		const sess = sessions.find((s) => s.id === id);
+		if (sess) selectedModel = sess.model;
+		modelError = null;
+		modelSuccess = null;
+	}
+
+	async function handleModelSave(): Promise<void> {
+		if (!selectedId || !selectedModel) return;
+		savingModel = true;
+		modelError = null;
+		modelSuccess = null;
 		try {
-			localStorage.setItem('sugu_model', model);
-		} catch {
-			// ignore
+			await patchSession(selectedId, { model: selectedModel });
+			modelSuccess = 'Model updated';
+			// Update local sessions
+			sessions = sessions.map((s) => (s.id === selectedId ? { ...s, model: selectedModel } : s));
+		} catch (e) {
+			const err = e as { message?: string };
+			modelError = err.message ?? 'Failed to update model';
+		} finally {
+			savingModel = false;
+		}
+	}
+
+	async function handleExportAll(): Promise<void> {
+		exportAllLoading = true;
+		try {
+			for (const s of sessions) {
+				try {
+					const text = await exportSession(s.id);
+					downloadJsonl(`${s.id}.jsonl`, text);
+					// Small delay to avoid overwhelming
+					await new Promise((r) => setTimeout(r, 100));
+				} catch {
+					// skip failed
+				}
+			}
+		} finally {
+			exportAllLoading = false;
 		}
 	}
 
@@ -60,24 +131,82 @@
 			class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md px-2 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 			aria-label="Back"
 		>
-			\u2190
+			<ArrowLeftIcon class="size-4" />
 		</a>
-		<h1 class="text-lg font-semibold">Settings</h1>
+		<h1 class="text-lg font-semibold flex items-center gap-2">
+			<SettingsIcon class="size-5" />
+			Settings
+		</h1>
 	</header>
 
 	<main class="flex flex-1 flex-col gap-6 p-4">
-		<div class="space-y-2">
-			<label for="model" class="text-sm font-medium">Model default</label>
-			<Input id="model" bind:value={model} placeholder="deepseek-chat" class="min-h-[44px]" />
-			<Button variant="outline" onclick={handleModelChange} class="min-h-[44px]">Save</Button>
-		</div>
+		{#if sessions.length > 0}
+			<div class="space-y-2">
+				<Label for="session-select">Session</Label>
+				<select
+					id="session-select"
+					value={selectedId}
+					onchange={(e) => handleSessionChange((e.target as HTMLSelectElement).value)}
+					class="flex min-h-[44px] w-full rounded-md border bg-card px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>
+					{#each sessions as s (s.id)}
+						<option value={s.id}>{s.title || s.id.slice(0, 8)} · {s.model}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="space-y-2">
+				<Label>Model</Label>
+				<ModelPicker
+					{models}
+					value={selectedModel}
+					source={modelsSource}
+					onSelect={(id) => (selectedModel = id)}
+				/>
+				{#if modelError}
+					<p class="text-sm text-destructive">{modelError}</p>
+				{/if}
+				{#if modelSuccess}
+					<p class="text-sm text-primary">{modelSuccess}</p>
+				{/if}
+				<Button
+					onclick={handleModelSave}
+					disabled={savingModel || !selectedModel}
+					class="min-h-[44px] w-full"
+				>
+					{#if savingModel}
+						<Spinner class="size-4" />
+						Saving…
+					{:else}
+						Save model
+					{/if}
+				</Button>
+			</div>
+
+			<Separator />
+
+			<div class="space-y-2">
+				<Button
+					variant="outline"
+					onclick={handleExportAll}
+					disabled={exportAllLoading || sessions.length === 0}
+					class="min-h-[44px] w-full gap-2"
+				>
+					<DownloadIcon class="size-4" />
+					{exportAllLoading ? 'Exporting…' : `Export all (${sessions.length})`}
+				</Button>
+			</div>
+		{:else}
+			<p class="text-sm text-muted-foreground">No sessions — create one to change its model.</p>
+		{/if}
 
 		{#if quota}
 			<div class="rounded-xl border p-4">
-				<p class="text-sm font-medium">Quota \u2014 {quota.day}</p>
+				<p class="text-sm font-medium">Quota — {quota.day}</p>
 				<p class="text-sm text-muted-foreground">
-					Turns: {quota.turns} \u00b7 Prompt: {quota.prompt_t} \u00b7 Completion: {quota.compl_t} \u00b7
-					Cost: ${quota.cost_usd.toFixed(4)}
+					Turns: {quota.turns} · Prompt: {quota.prompt_t} · Completion: {quota.compl_t} · Cost: ${quota.cost_usd.toFixed(
+						4
+					)}
 				</p>
 			</div>
 		{:else if quotaError}
@@ -86,14 +215,15 @@
 			</div>
 		{:else}
 			<div class="rounded-xl border border-dashed p-4">
-				<p class="text-sm text-muted-foreground">Quota \u2014 loading\u2026</p>
+				<p class="text-sm text-muted-foreground">Quota — loading…</p>
 			</div>
 		{/if}
 
 		<div class="mt-auto">
-			<Button variant="destructive" onclick={handleLogout} class="min-h-[44px] w-full"
-				>Logout</Button
-			>
+			<Button variant="destructive" onclick={handleLogout} class="min-h-[44px] w-full gap-2">
+				<LogOutIcon class="size-4" />
+				Logout
+			</Button>
 		</div>
 	</main>
 </div>
