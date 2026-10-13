@@ -3,7 +3,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
-import { writeFile, readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 
 const HEALTH_PATH = '/api/health';

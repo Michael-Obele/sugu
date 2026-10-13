@@ -22,24 +22,6 @@ function wsConnect(sessionId: string, token: string, since?: number): Promise<We
 	});
 }
 
-function collectFrames(ws: WebSocket, timeoutMs = 3000): Promise<Record<string, unknown>[]> {
-	const frames: Record<string, unknown>[] = [];
-	return new Promise((resolve) => {
-		const onMessage = (event: MessageEvent) => {
-			try {
-				frames.push(JSON.parse(event.data as string));
-			} catch {
-				// ignore
-			}
-		};
-		ws.addEventListener('message', onMessage);
-		setTimeout(() => {
-			ws.removeEventListener('message', onMessage);
-			resolve(frames);
-		}, timeoutMs);
-	});
-}
-
 function waitForFrames(
 	ws: WebSocket,
 	predicate: (frames: Record<string, unknown>[]) => boolean,
@@ -137,7 +119,7 @@ describe('session-cell integration', () => {
 		const firstSeq = firstMsg['seq'] as number;
 
 		ws1.send(JSON.stringify({ v: 1, t: 'send', text: 'second' }));
-		const frames2 = await waitForFrames(
+		await waitForFrames(
 			ws1,
 			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
 			5000

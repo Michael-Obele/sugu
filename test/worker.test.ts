@@ -9,7 +9,6 @@ function loginHeaders(ip: string): Record<string, string> {
 
 let server: DevServer;
 let BASE: string;
-let WS_BASE: string;
 
 const SECRET = TEST_SECRETS.TOKEN_SECRET;
 const ADMIN = TEST_SECRETS.ADMIN_TOKEN;
@@ -20,7 +19,6 @@ const PASSPHRASE = TEST_SECRETS.SUGU_PASSPHRASE;
 beforeAll(async () => {
 	server = await startDevServer();
 	BASE = server.baseUrl;
-	WS_BASE = server.wsBaseUrl;
 }, 30_000);
 
 afterAll(async () => {

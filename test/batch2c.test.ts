@@ -2,7 +2,6 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 import {
 	perTokenToPerM,
 	parseOpenRouterPayload,
-	filterModels,
 	costFor,
 	__setPriceMapForTests,
 	__resetPriceMapForTests,

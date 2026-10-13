@@ -107,7 +107,6 @@ describe('parseSseStream incremental', () => {
 		const eAcute = encoder.encode('é');
 		expect(eAcute.length).toBe(2);
 		// Find where café starts in bytes
-		const cafeBytes = encoder.encode('café');
 		// Just split the full bytes arbitrarily at a non-boundary
 		const splitAt = bytes.length - 10;
 		const chunk1 = bytes.slice(0, splitAt);

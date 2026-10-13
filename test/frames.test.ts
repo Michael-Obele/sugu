@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { applyFrame, initialFrameState, type FrameState } from '../sugu/src/lib/frames';
+import { applyFrame, initialFrameState } from '../sugu/src/lib/frames';
 import { parseFrame } from '../src/shared/contracts';
 import type { Frame } from '../src/shared/contracts';
 

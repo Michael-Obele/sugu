@@ -741,11 +741,3 @@ function eventRowToFrame(row: {
 			return null;
 	}
 }
-
-function chunkString(s: string, size: number): string[] {
-	const chunks: string[] = [];
-	for (let i = 0; i < s.length; i += size) {
-		chunks.push(s.slice(i, i + size));
-	}
-	return chunks;
-}
