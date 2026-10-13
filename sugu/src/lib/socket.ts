@@ -110,8 +110,10 @@ export class SuguSocket {
 		}
 	}
 
-	sendText(text: string): void {
-		this.send({ v: 1, t: 'send', text });
+	sendText(text: string, skills?: string[]): void {
+		const frame: Record<string, unknown> = { v: 1, t: 'send', text };
+		if (skills && skills.length > 0) frame['skills'] = skills;
+		this.send(frame);
 	}
 
 	cancel(): void {

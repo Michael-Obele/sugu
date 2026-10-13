@@ -1,0 +1,32 @@
+[
+	{
+		"name": "deep-research",
+		"path": "skills/deep-research",
+		"type": "dir",
+		"sha": "abc"
+	},
+	{
+		"name": "writing",
+		"path": "skills/writing",
+		"type": "dir",
+		"sha": "def"
+	},
+	{
+		"name": "code-review",
+		"path": "skills/code-review",
+		"type": "dir",
+		"sha": "ghi"
+	},
+	{
+		"name": ".hidden",
+		"path": "skills/.hidden",
+		"type": "dir",
+		"sha": "jkl"
+	},
+	{
+		"name": "README.md",
+		"path": "skills/README.md",
+		"type": "file",
+		"sha": "mno"
+	}
+]

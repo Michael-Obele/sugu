@@ -229,6 +229,27 @@ export async function getQuota(): Promise<{
 	return handleResponse(res);
 }
 
+export type SkillInfo = {
+	name: string;
+	description: string;
+	source: string;
+	path: string;
+};
+
+export type SkillsResponse = {
+	skills: SkillInfo[];
+	configured: boolean;
+	fetchedAt: string;
+	error?: string;
+};
+
+export async function getSkills(): Promise<SkillsResponse> {
+	const res = await fetch('/api/skills', {
+		headers: { ...authHeaders() }
+	});
+	return handleResponse<SkillsResponse>(res);
+}
+
 export function logout(): void {
 	setToken(null);
 }

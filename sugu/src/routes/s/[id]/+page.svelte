@@ -8,11 +8,12 @@
 		setOnUnauthorized,
 		getEventsPage,
 		getModels,
+		getSkills,
 		patchSession,
 		exportSession,
 		downloadJsonl
 	} from '$lib/api';
-	import type { ModelInfo } from '$lib/api';
+	import type { ModelInfo, SkillInfo } from '$lib/api';
 	import { sessionStore } from '$lib/session.svelte';
 	import { applyFrame } from '$lib/frames';
 	import type { Frame } from '../../../../../src/shared/contracts';
@@ -49,6 +50,11 @@
 		cost_usd: number;
 	} | null = $state(null);
 
+	let skills = $state<SkillInfo[]>([]);
+	let skillsConfigured = $state(true);
+	let skillsError = $state<string | undefined>(undefined);
+	let selectedSkills = $state<string[]>([]);
+
 	let showModelDialog = $state(false);
 	let models = $state<ModelInfo[]>([]);
 	let modelsSource = $state('fallback');
@@ -58,6 +64,17 @@
 	let showRenameDialog = $state(false);
 	let renameValue = $state('');
 	let renameSaving = $state(false);
+
+	async function loadSkills(): Promise<void> {
+		try {
+			const res = await getSkills();
+			skills = res.skills;
+			skillsConfigured = res.configured;
+			skillsError = res.error;
+		} catch (e) {
+			skillsError = e instanceof Error ? e.message : String(e);
+		}
+	}
 
 	function doConnect(id: string): void {
 		if (!id) return;
@@ -150,6 +167,7 @@
 		}
 		setOnUnauthorized(() => goto(`/login?redirect=${encodeURIComponent(`/s/${sessionId}`)}`));
 		doConnect(sessionId);
+		loadSkills();
 
 		return () => {
 			sessionStore.disconnect();
@@ -164,13 +182,15 @@
 		}
 	});
 
-	function handleSend(text: string): void {
+	function handleSend(text: string, skills?: string[]): void {
+		const toSend = skills ?? selectedSkills;
 		if (sessionStore.connection !== 'open') {
 			pendingSend = text;
 			composerText = text;
 			return;
 		}
-		sessionStore.send(text);
+		sessionStore.send(text, toSend.length > 0 ? toSend : undefined);
+		selectedSkills = [];
 	}
 
 	function handleCancel(): void {
@@ -368,6 +388,10 @@
 		bind:value={composerText}
 		busy={sessionStore.busy}
 		disabled={sessionStore.connection !== 'open' && sessionStore.connection !== 'reconnecting'}
+		{skills}
+		{skillsConfigured}
+		{skillsError}
+		bind:selectedSkills
 		onSend={handleSend}
 		onCancel={handleCancel}
 	/>

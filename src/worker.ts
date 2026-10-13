@@ -4,6 +4,7 @@ import { constantTimeEqual, signToken, verifyToken } from './server/auth';
 import { errorJson, json, parseBearer } from './server/http';
 import { handleProbeCompute, handleProbeRows } from './server/probe';
 import { getModels } from './server/models';
+import { getSkills } from './server/skills';
 import * as v from 'valibot';
 
 export { MetaCell, SessionCell };
@@ -194,6 +195,23 @@ export default {
 				env as unknown as { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string }
 			);
 			return json(result);
+		}
+
+		// GET /api/skills — token-authed, lists available skills from configured sources
+		if (url.pathname === '/api/skills' && request.method === 'GET') {
+			const authErr = await requireUserAuth(request, env);
+			if (authErr) return authErr;
+			try {
+				const result = await getSkills(env as unknown as { SUGU_SKILL_SOURCES?: string; GITHUB_TOKEN?: string });
+				return json(result);
+			} catch (e) {
+				const msg = e instanceof Error ? e.message : String(e);
+				// Rate limit / auth failures are reported honestly
+				if (msg.includes('403') || msg.includes('429')) {
+					return errorJson(msg, 502);
+				}
+				return errorJson(msg, 502);
+			}
 		}
 
 		// PATCH /api/sessions/:id — rename and/or model

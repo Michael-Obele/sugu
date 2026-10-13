@@ -105,7 +105,7 @@ export class SessionStore {
 		this.connection = 'closed';
 	}
 
-	send(text: string): void {
+	send(text: string, skills?: string[]): void {
 		if (!text.trim()) return;
 		if (this.connection !== 'open') {
 			this.error = 'You are offline — message kept in composer';
@@ -115,7 +115,7 @@ export class SessionStore {
 		const id = crypto.randomUUID();
 		this.pendingSends = [...this.pendingSends, { id, text, status: 'pending' }];
 		if (this.socket) {
-			this.socket.sendText(text);
+			this.socket.sendText(text, skills);
 		}
 	}
 
