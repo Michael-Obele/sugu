@@ -78,7 +78,7 @@ export type DevServer = {
 	stop: () => Promise<void>;
 };
 
-export async function startDevServer(opts?: { port?: number }): Promise<DevServer> {
+export async function startDevServer(opts?: { port?: number; modelStubText?: string }): Promise<DevServer> {
 	const port = opts?.port ?? (await findFreePort());
 	const baseUrl = `http://127.0.0.1:${port}`;
 	const wsBaseUrl = `ws://127.0.0.1:${port}`;
@@ -102,6 +102,8 @@ export async function startDevServer(opts?: { port?: number }): Promise<DevServe
 		delete env[marker];
 	}
 
+	const extraVars: string[] = [];
+	if (opts?.modelStubText) extraVars.push('--var', `MODEL_STUB_TEXT:${opts.modelStubText}`);
 	const proc: Subprocess = spawn({
 		cmd: [
 			WRANGLER_BIN,
@@ -119,7 +121,8 @@ export async function startDevServer(opts?: { port?: number }): Promise<DevServe
 			'--var',
 			`ADMIN_TOKEN:${TEST_SECRETS.ADMIN_TOKEN}`,
 			'--var',
-			'MODEL_STUB:1'
+			'MODEL_STUB:1',
+			...extraVars
 		],
 		cwd: PROJECT_ROOT,
 		env,

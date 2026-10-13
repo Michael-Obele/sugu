@@ -464,6 +464,19 @@ export class StubAdapter implements ModelAdapter {
 		const text = this.opts?.text ?? 'stub response';
 		// If text starts with "TOOL:", parse as tool calls
 		if (text.startsWith('TOOL:')) {
+			// If this is a follow-up call after a tool (messages contain tool result), yield final text only
+			const hasToolResult = req.messages.some((m) => m.content.includes('Tool ') && m.content.includes(':'));
+			if (hasToolResult) {
+				const finalPart = text.split('|TOOL:').pop() ?? 'final';
+				const finalText = finalPart.startsWith('{') ? 'tool done' : finalPart;
+				for (let i = 0; i < finalText.length; i += 5) {
+					if (signal.aborted) break;
+					yield { delta: finalText.slice(i, i + 5) };
+					await new Promise<void>((r) => setTimeout(r, 5));
+				}
+				if (!signal.aborted) yield { usage: { promptTokens: 10, completionTokens: finalText.length, costUsd: 0 } };
+				return;
+			}
 			const parts = text.slice(5).split('|TOOL:');
 			for (const part of parts) {
 				if (signal.aborted) break;

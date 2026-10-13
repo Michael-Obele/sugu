@@ -566,3 +566,94 @@ describe('session-cell integration', () => {
 		expect(closeCode as unknown as number).toBe(1008);
 	});
 });
+
+describe('tool replay: hello since 0 includes tool frames with assistant seq', () => {
+	let toolServer: DevServer;
+	let _toolBase: string;
+	let toolWsBase: string;
+
+	beforeAll(async () => {
+		toolServer = await startDevServer({
+			modelStubText: 'TOOL:{"name":"sepia__search","arguments":"{\\"q\\":\\"hello\\"}"}|TOOL:final from tool'
+		});
+		_toolBase = toolServer.baseUrl;
+		toolWsBase = toolServer.wsBaseUrl;
+	}, 30_000);
+
+	afterAll(async () => {
+		await toolServer.stop();
+	}, 30_000);
+
+	function toolWsConnect(sessionId: string, token: string, since?: number): Promise<WebSocket> {
+		const tokenParam = `&token=${encodeURIComponent(token)}`;
+		return new Promise((resolve, reject) => {
+			const ws = new WebSocket(`${toolWsBase}/ws?sessionId=${encodeURIComponent(sessionId)}${tokenParam}`);
+			ws.addEventListener('open', () => {
+				const hello: Record<string, unknown> = { v: 1, t: 'hello', sessionId, token };
+				if (since !== undefined) hello['since'] = since;
+				ws.send(JSON.stringify(hello));
+				resolve(ws);
+			});
+			ws.addEventListener('error', (e) => reject(e));
+			setTimeout(() => reject(new Error('ws connect timeout')), 5000);
+		});
+	}
+
+	test('tool turn then hello since 0 replays tool frame with seq == assistant msg seq', async () => {
+		const sessionId = `test-tool-replay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const token = await signToken(SECRET);
+
+		// First connection: trigger a turn that calls a tool
+		const ws1 = await toolWsConnect(sessionId, token);
+		await waitForFrames(ws1, (frames) => frames.some((f) => f['t'] === 'state'), 3000);
+
+		ws1.send(JSON.stringify({ v: 1, t: 'send', text: 'trigger tool' }));
+
+		// Wait for the assistant msg (final text after tool) — proves turn completed
+		const liveFrames = await waitForFrames(
+			ws1,
+			(frames) =>
+				frames.some(
+					(f) =>
+						f['t'] === 'msg' &&
+						(f as Record<string, unknown>)['role'] === 'assistant' &&
+						typeof (f as Record<string, unknown>)['text'] === 'string' &&
+						((f as Record<string, unknown>)['text'] as string).length > 0
+				),
+			8000
+		);
+		const liveToolFinal = liveFrames.find((f) => f['t'] === 'tool' && (f as Record<string, unknown>)['status'] !== 'running') as
+			| Record<string, unknown>
+			| undefined;
+		expect(liveToolFinal).toBeDefined();
+		expect(liveToolFinal!['seq']).toBeDefined();
+		const liveAssistantMsg = liveFrames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['role'] === 'assistant') as
+			| Record<string, unknown>
+			| undefined;
+		expect(liveAssistantMsg).toBeDefined();
+		const assistantSeq = liveAssistantMsg!['seq'] as number;
+		expect(liveToolFinal!['seq']).toBe(assistantSeq);
+
+		ws1.close();
+		await new Promise((r) => setTimeout(r, 300));
+
+		// Reconnect with hello since 0 — replay must include the same tool frame with same seq
+		const ws2 = await toolWsConnect(sessionId, token, 0);
+		const replay = await waitForFrames(ws2, (frames) => frames.some((f) => f['t'] === 'state'), 5000);
+
+		const replayTools = replay.filter((f) => f['t'] === 'tool') as Record<string, unknown>[];
+		expect(replayTools.length).toBeGreaterThan(0);
+		const replayTool = replayTools[0]!;
+		// Replay tool seq must equal the assistant message seq (not its own row id)
+		expect(replayTool['seq']).toBe(assistantSeq);
+		// Also verify the replay contains the assistant msg itself
+		const replayAssistant = replay.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['role'] === 'assistant') as
+			| Record<string, unknown>
+			| undefined;
+		expect(replayAssistant).toBeDefined();
+		expect(replayAssistant!['seq']).toBe(assistantSeq);
+
+		ws2.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+});

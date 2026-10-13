@@ -639,13 +639,13 @@ export class SessionCell extends DurableObject<Env> {
 					truncated
 				})
 			);
-			const toolFrameSeq = (this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }).id;
+			void (this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }).id;
 			try {
 				ws.send(
 					JSON.stringify({
 						v: 1,
 						t: 'tool',
-						seq: toolFrameSeq,
+						seq: this.pendingAssistantId,
 						runId,
 						name: toolName,
 						status,
