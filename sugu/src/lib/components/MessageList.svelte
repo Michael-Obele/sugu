@@ -7,13 +7,26 @@
 		messages: DisplayMessage[];
 		tools?: ToolEntry[];
 		errs?: ErrEntry[];
-		pendingSends?: { id: string; text: string; status: 'pending' | 'sent' | 'failed'; error?: string }[];
+		pendingSends?: {
+			id: string;
+			text: string;
+			status: 'pending' | 'sent' | 'failed';
+			error?: string;
+		}[];
 		onRerun?: (text: string) => void;
 		onRetryPending?: (id: string) => void;
 		onDismissPending?: (id: string) => void;
 	};
 
-	let { messages, tools = [], errs = [], pendingSends = [], onRerun, onRetryPending, onDismissPending }: Props = $props();
+	let {
+		messages,
+		tools = [],
+		errs = [],
+		pendingSends = [],
+		onRerun,
+		onRetryPending,
+		onDismissPending
+	}: Props = $props();
 
 	function toolsForSeq(seq: number): ToolEntry[] {
 		return tools.filter((t) => t.seq === seq);
@@ -59,11 +72,11 @@
 
 <div
 	bind:this={scrollEl}
-		onscroll={handleScroll}
-		class="flex flex-1 flex-col gap-3 overflow-y-auto p-4"
-		role="log"
-		aria-live="polite"
-		aria-relevant="additions"
+	onscroll={handleScroll}
+	class="flex flex-1 flex-col gap-3 overflow-y-auto p-4"
+	role="log"
+	aria-live="polite"
+	aria-relevant="additions"
 >
 	{#each messages as msg (msg.seq)}
 		<span class="hidden" aria-hidden="true">{checkAutoscroll()}</span>
@@ -82,28 +95,50 @@
 	{/each}
 
 	{#each pendingSends as p (p.id)}
-		<div class={p.status === 'failed' ? 'flex items-center gap-2 rounded-xl border border-destructive/50 bg-card px-4 py-3 text-sm' : 'flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm opacity-60'}>
+		<div
+			class={p.status === 'failed'
+				? 'flex items-center gap-2 rounded-xl border border-destructive/50 bg-card px-4 py-3 text-sm'
+				: 'flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm opacity-60'}
+		>
 			<span class="flex-1 truncate">{p.text}</span>
 			{#if p.status === 'pending'}
 				<span class="text-xs text-muted-foreground">Sending\u2026</span>
 			{:else if p.status === 'failed'}
 				<span class="text-xs text-destructive">{p.error ?? 'Failed'}</span>
-				<button type="button" onclick={() => onRetryPending?.(p.id)} class="min-h-[44px] min-w-[44px] rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">Retry</button>
-				<button type="button" onclick={() => onDismissPending?.(p.id)} class="min-h-[44px] min-w-[44px] rounded-md border px-2 py-1 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">Dismiss</button>
+				<button
+					type="button"
+					onclick={() => onRetryPending?.(p.id)}
+					class="min-h-[44px] min-w-[44px] rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					>Retry</button
+				>
+				<button
+					type="button"
+					onclick={() => onDismissPending?.(p.id)}
+					class="min-h-[44px] min-w-[44px] rounded-md border px-2 py-1 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					>Dismiss</button
+				>
 			{/if}
 		</div>
 	{/each}
 
 	{#each errs as e (e.at)}
-		<div role="alert" class="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-			<span class="font-medium">{e.code}:</span> {e.message}
+		<div
+			role="alert"
+			class="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+		>
+			<span class="font-medium">{e.code}:</span>
+			{e.message}
 		</div>
 	{/each}
 </div>
 
 {#if showJump}
 	<div class="sticky bottom-0 flex justify-center p-2">
-		<button type="button" onclick={jumpToLatest} class="min-h-[44px] rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+		<button
+			type="button"
+			onclick={jumpToLatest}
+			class="min-h-[44px] rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		>
 			Jump to latest \u2193
 		</button>
 	</div>

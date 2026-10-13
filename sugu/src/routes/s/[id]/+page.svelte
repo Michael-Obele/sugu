@@ -24,13 +24,9 @@
 			return;
 		}
 		lastConnectedId = id;
-		sessionStore.connect(
-			id,
-			flushPending,
-			(text) => {
-				composerText = text;
-			}
-		);
+		sessionStore.connect(id, flushPending, (text) => {
+			composerText = text;
+		});
 	}
 
 	function flushPending(): void {
@@ -90,7 +86,13 @@
 	}
 
 	let connectionLabel = $derived(
-		sessionStore.connection === 'open' ? 'Connected' : sessionStore.connection === 'reconnecting' ? 'Reconnecting' : sessionStore.connection === 'connecting' ? 'Connecting' : 'Offline'
+		sessionStore.connection === 'open'
+			? 'Connected'
+			: sessionStore.connection === 'reconnecting'
+				? 'Reconnecting'
+				: sessionStore.connection === 'connecting'
+					? 'Connecting'
+					: 'Offline'
 	);
 </script>
 
@@ -98,9 +100,17 @@
 	<ConnectionBanner state={sessionStore.connection} />
 
 	{#if sessionStore.error}
-		<div role="alert" class="flex items-center justify-between gap-2 bg-destructive px-4 py-2 text-sm text-destructive-foreground">
+		<div
+			role="alert"
+			class="flex items-center justify-between gap-2 bg-destructive px-4 py-2 text-sm text-destructive-foreground"
+		>
 			<span>{sessionStore.error}</span>
-			<button type="button" onclick={() => (sessionStore.error = null)} class="min-h-[44px] min-w-[44px] rounded-md px-2 text-xs underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">Dismiss</button>
+			<button
+				type="button"
+				onclick={() => (sessionStore.error = null)}
+				class="min-h-[44px] min-w-[44px] rounded-md px-2 text-xs underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>Dismiss</button
+			>
 		</div>
 	{/if}
 
@@ -113,8 +123,23 @@
 			\u2190
 		</a>
 		<span class="flex-1 truncate text-sm font-medium">{sessionId.slice(0, 8)}</span>
-		<span class="flex items-center gap-1.5 text-xs {sessionStore.connection === 'open' ? 'text-emerald-500' : sessionStore.connection === 'reconnecting' ? 'text-warning' : 'text-muted-foreground'}" aria-label={connectionLabel} title={connectionLabel}>
-			<span class="h-2 w-2 rounded-full {sessionStore.connection === 'open' ? 'bg-emerald-500' : sessionStore.connection === 'reconnecting' ? 'bg-warning animate-pulse' : 'bg-muted-foreground'}" aria-hidden="true"></span>
+		<span
+			class="flex items-center gap-1.5 text-xs {sessionStore.connection === 'open'
+				? 'text-emerald-500'
+				: sessionStore.connection === 'reconnecting'
+					? 'text-warning'
+					: 'text-muted-foreground'}"
+			aria-label={connectionLabel}
+			title={connectionLabel}
+		>
+			<span
+				class="h-2 w-2 rounded-full {sessionStore.connection === 'open'
+					? 'bg-emerald-500'
+					: sessionStore.connection === 'reconnecting'
+						? 'bg-warning animate-pulse'
+						: 'bg-muted-foreground'}"
+				aria-hidden="true"
+			></span>
 			{connectionLabel}
 		</span>
 	</header>

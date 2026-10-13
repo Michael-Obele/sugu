@@ -13,7 +13,7 @@ describe('parseSseText fixtures', () => {
 			'data: {"choices":[{"delta":{"content":" world"}}]}',
 			'',
 			'data: [DONE]',
-			'',
+			''
 		].join('\n');
 		const events = parseSseText(text);
 		expect(events.length).toBe(2);
@@ -34,13 +34,7 @@ describe('parseSseText fixtures', () => {
 	});
 
 	test('multi-line data: event', () => {
-		const text = [
-			'data: line one',
-			'data: line two',
-			'',
-			'data: [DONE]',
-			'',
-		].join('\n');
+		const text = ['data: line one', 'data: line two', '', 'data: [DONE]', ''].join('\n');
 		const events = parseSseText(text);
 		expect(events.length).toBe(1);
 		expect(events[0]!.data).toBe('line one\nline two');
@@ -53,20 +47,14 @@ describe('parseSseText fixtures', () => {
 			'data: [DONE]',
 			'',
 			'data: {"choices":[{"delta":{"content":"should not appear"}}]}',
-			'',
+			''
 		].join('\n');
 		const events = parseSseText(text);
 		expect(events.length).toBe(1);
 	});
 
 	test('malformed line without colon is ignored, does not throw', () => {
-		const text = [
-			'this is not valid sse',
-			'data: {"choices":[{"delta":{"content":"ok"}}]}',
-			'',
-			'data: [DONE]',
-			'',
-		].join('\n');
+		const text = ['this is not valid sse', 'data: {"choices":[{"delta":{"content":"ok"}}]}', '', 'data: [DONE]', ''].join('\n');
 		expect(() => parseSseText(text)).not.toThrow();
 		const events = parseSseText(text);
 		expect(events.length).toBe(1);
@@ -89,7 +77,7 @@ describe('parseSseStream incremental', () => {
 		const chunks = [
 			encoder.encode('data: {"choices":[{"delta":{"content":"hel'),
 			encoder.encode('lo"}}]}\n\n'),
-			encoder.encode('data: [DONE]\n\n'),
+			encoder.encode('data: [DONE]\n\n')
 		];
 		let idx = 0;
 		const stream = new ReadableStream<Uint8Array>({
@@ -99,7 +87,7 @@ describe('parseSseStream incremental', () => {
 				} else {
 					controller.close();
 				}
-			},
+			}
 		});
 		const events: { data: string }[] = [];
 		for await (const ev of parseSseStream(stream)) {
@@ -133,7 +121,7 @@ describe('parseSseStream incremental', () => {
 				} else {
 					controller.close();
 				}
-			},
+			}
 		});
 		const events: { data: string }[] = [];
 		for await (const ev of parseSseStream(stream)) {
@@ -152,7 +140,7 @@ describe('parseSseStream incremental', () => {
 				controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'));
 				controller.enqueue(encoder.encode('data: [DONE]\n\n'));
 				controller.close();
-			},
+			}
 		});
 		const events: { data: string }[] = [];
 		await expect(async () => {
@@ -170,7 +158,7 @@ describe('parseSseStream incremental', () => {
 			pull(ctrl) {
 				ctrl.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'));
 				// Don't close — let abort handle it
-			},
+			}
 		});
 		const events: { data: string }[] = [];
 		let count = 0;

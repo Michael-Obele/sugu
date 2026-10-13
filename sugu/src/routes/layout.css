@@ -21,7 +21,7 @@
 	--color-input: oklch(0.26 0 0);
 	--color-ring: oklch(0.62 0.18 250);
 	--color-warning: oklch(0.77 0.16 70);
-	--color-warning-foreground: oklch(0.20 0.04 70);
+	--color-warning-foreground: oklch(0.2 0.04 70);
 	--radius: 0.5rem;
 }
 
@@ -50,8 +50,13 @@ body {
 
 /* Streaming bubble: subtle pulse, suppressed for reduced motion */
 @keyframes sugu-stream-pulse {
-	0%, 100% { opacity: 1; }
-	50% { opacity: 0.85; }
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.85;
+	}
 }
 .streaming {
 	animation: sugu-stream-pulse 1.2s ease-in-out infinite;

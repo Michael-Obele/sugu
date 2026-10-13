@@ -81,7 +81,12 @@
 			Stop
 		</Button>
 	{:else}
-		<Button type="submit" disabled={!value.trim() || disabled} class="min-h-[44px] min-w-[44px]" aria-label="Send message">
+		<Button
+			type="submit"
+			disabled={!value.trim() || disabled}
+			class="min-h-[44px] min-w-[44px]"
+			aria-label="Send message"
+		>
 			Send
 		</Button>
 	{/if}

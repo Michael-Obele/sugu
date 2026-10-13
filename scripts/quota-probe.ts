@@ -36,7 +36,7 @@ async function probeCompute(): Promise<ProbeResult[]> {
 			const res = await fetch(`${target}/api/probe/compute`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', Authorization: `Bearer ${adminToken}` },
-				body: JSON.stringify({ iterations }),
+				body: JSON.stringify({ iterations })
 			});
 			const body = await res.text();
 			if (res.ok) {
@@ -66,7 +66,7 @@ async function probeRows(): Promise<ProbeResult[]> {
 			const res = await fetch(`${target}/api/probe/rows`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', Authorization: `Bearer ${adminToken}` },
-				body: JSON.stringify({ count }),
+				body: JSON.stringify({ count })
 			});
 			const body = await res.text();
 			if (res.ok) {
@@ -89,7 +89,9 @@ async function probeRequests(): Promise<ProbeResult[]> {
 	// even if --max is larger, so the probe never eats the free tier's daily budget.
 	const requestMax = Math.min(max, 1000);
 	if (dryRun) {
-		return [{ label: `requests up to ${requestMax}`, ok: true, detail: `dry-run: would send ${requestMax} sequential GET ${target}/api/health` }];
+		return [
+			{ label: `requests up to ${requestMax}`, ok: true, detail: `dry-run: would send ${requestMax} sequential GET ${target}/api/health` }
+		];
 	}
 	let count = 0;
 	let lastStatus = 0;
@@ -112,7 +114,13 @@ async function probeRequests(): Promise<ProbeResult[]> {
 		}
 	}
 	if (count === requestMax) {
-		return [{ label: `requests ${count}/${requestMax}`, ok: true, detail: `all ${count} succeeded (ceiling ${requestMax} reached, no failure observed)` }];
+		return [
+			{
+				label: `requests ${count}/${requestMax}`,
+				ok: true,
+				detail: `all ${count} succeeded (ceiling ${requestMax} reached, no failure observed)`
+			}
+		];
 	}
 	if (count === 0) {
 		return [{ label: `requests 0/${requestMax}`, ok: false, detail: lastDetail || `failed at 0 (${lastStatus})` }];
@@ -131,7 +139,9 @@ async function main() {
 		console.log('## Plan (dry-run)');
 		console.log('- POST /api/probe/compute with iterations: 1k, 10k, 100k, 1M, 5M, 10M (up to --max)');
 		console.log('- POST /api/probe/rows with count: 10, 100, 1000, 5000 (up to --max)');
-		console.log(`- Request-rate walk: sequential GET /api/health up to ${Math.min(max, 1000)} requests (capped at 1000 by default, --max lowers it)`);
+		console.log(
+			`- Request-rate walk: sequential GET /api/health up to ${Math.min(max, 1000)} requests (capped at 1000 by default, --max lowers it)`
+		);
 		console.log('');
 	}
 

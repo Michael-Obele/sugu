@@ -1,16 +1,16 @@
 {
-  "style": "vega",
-  "tailwind": {
-    "baseColor": "zinc",
-    "css": "src/routes/layout.css"
-  },
-  "aliases": {
-    "components": "$lib/components",
-    "utils": "$lib/utils",
-    "ui": "$lib/components/ui",
-    "hooks": "$lib/hooks",
-    "lib": "$lib"
-  },
-  "typescript": true,
-  "iconLibrary": "lucide"
+	"style": "vega",
+	"tailwind": {
+		"baseColor": "zinc",
+		"css": "src/routes/layout.css"
+	},
+	"aliases": {
+		"components": "$lib/components",
+		"utils": "$lib/utils",
+		"ui": "$lib/components/ui",
+		"hooks": "$lib/hooks",
+		"lib": "$lib"
+	},
+	"typescript": true,
+	"iconLibrary": "lucide"
 }

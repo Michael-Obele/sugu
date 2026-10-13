@@ -25,7 +25,7 @@ function wsConnect(sessionId: string, token: string, since?: number): Promise<We
 function waitForFrames(
 	ws: WebSocket,
 	predicate: (frames: Record<string, unknown>[]) => boolean,
-	timeoutMs = 5000,
+	timeoutMs = 5000
 ): Promise<Record<string, unknown>[]> {
 	return new Promise((resolve, reject) => {
 		const frames: Record<string, unknown>[] = [];
@@ -73,7 +73,7 @@ describe('task4: model streaming', () => {
 		const frames = await waitForFrames(
 			ws,
 			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
-			5000,
+			5000
 		);
 		const msg = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response');
 		expect(msg).toBeDefined();
@@ -95,7 +95,7 @@ describe('task4: model streaming', () => {
 		await waitForFrames(
 			ws,
 			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
-			5000,
+			5000
 		);
 		// Wait for state with busy:false to ensure usage was recorded
 		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === false), 3000);
@@ -116,7 +116,7 @@ describe('task4: model streaming', () => {
 	test('GET /api/quota returns usage (one row-read, token-authed)', async () => {
 		const token = await signToken(SECRET);
 		const res = await fetch(`${BASE}/api/quota`, {
-			headers: { Authorization: `Bearer ${token}` },
+			headers: { Authorization: `Bearer ${token}` }
 		});
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as { day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number };
@@ -142,11 +142,14 @@ describe('task4: model streaming', () => {
 		const frames = await waitForFrames(
 			ws,
 			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
-			5000,
+			5000
 		);
 		const tokenFrames = frames.filter((f) => f['t'] === 'token');
 		expect(tokenFrames.length).toBeGreaterThan(0);
-		const msgFrame = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response') as Record<string, unknown>;
+		const msgFrame = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response') as Record<
+			string,
+			unknown
+		>;
 		expect(msgFrame).toBeDefined();
 		expect(tokenFrames[0]!['seq']).toBe(msgFrame['seq']);
 
@@ -164,7 +167,7 @@ describe('task4: model streaming', () => {
 		await waitForFrames(
 			ws,
 			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response'),
-			5000,
+			5000
 		);
 		await waitForFrames(ws, (frames) => frames.some((f) => f['t'] === 'state' && (f as Record<string, unknown>)['busy'] === false), 3000);
 
@@ -172,10 +175,21 @@ describe('task4: model streaming', () => {
 		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'second' }));
 		const frames2 = await waitForFrames(
 			ws,
-			(frames) => frames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response' && (f as Record<string, unknown>)['role'] === 'assistant'),
-			5000,
+			(frames) =>
+				frames.some(
+					(f) =>
+						f['t'] === 'msg' &&
+						(f as Record<string, unknown>)['text'] === 'stub response' &&
+						(f as Record<string, unknown>)['role'] === 'assistant'
+				),
+			5000
 		);
-		const msgs = frames2.filter((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response' && (f as Record<string, unknown>)['role'] === 'assistant');
+		const msgs = frames2.filter(
+			(f) =>
+				f['t'] === 'msg' &&
+				(f as Record<string, unknown>)['text'] === 'stub response' &&
+				(f as Record<string, unknown>)['role'] === 'assistant'
+		);
 		expect(msgs.length).toBeGreaterThanOrEqual(1);
 		expect(frames2.some((f) => f['t'] === 'err' && (f as Record<string, unknown>)['code'] === 'busy')).toBe(false);
 

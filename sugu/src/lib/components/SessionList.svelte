@@ -31,29 +31,31 @@
 
 <div class="flex flex-col gap-2 p-4">
 	<button
-			type="button"
-			onclick={onNew}
-			class={cn(
-				'flex min-h-[44px] items-center justify-center rounded-xl border border-dashed bg-card px-4 py-3 text-sm font-medium',
-				'hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
+		type="button"
+		onclick={onNew}
+		class={cn(
+			'flex min-h-[44px] items-center justify-center rounded-xl border border-dashed bg-card px-4 py-3 text-sm font-medium',
+			'hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
 		)}
-		>
-			New session
-		</button>
+	>
+		New session
+	</button>
 
 	{#each sessions as session (session.id)}
 		<button
-				type="button"
-				onclick={() => onSelect(session.id)}
-				class={cn(
-					'flex flex-col items-start gap-1 rounded-xl border bg-card px-4 py-3 text-left',
-					'hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-					'min-h-[44px]',
-					activeId === session.id && 'border-primary bg-accent'
+			type="button"
+			onclick={() => onSelect(session.id)}
+			class={cn(
+				'flex flex-col items-start gap-1 rounded-xl border bg-card px-4 py-3 text-left',
+				'hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+				'min-h-[44px]',
+				activeId === session.id && 'border-primary bg-accent'
 			)}
 		>
 			<span class="text-sm font-medium">{session.title || 'Untitled'}</span>
-			<span class="text-xs text-muted-foreground">{relativeTime(session.updatedAt)} \u00b7 {session.model}</span>
+			<span class="text-xs text-muted-foreground"
+				>{relativeTime(session.updatedAt)} \u00b7 {session.model}</span
+			>
 		</button>
 	{:else}
 		<div class="rounded-xl border border-dashed p-8 text-center">

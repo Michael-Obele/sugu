@@ -6,7 +6,13 @@
 	import { Input } from '$lib/components/ui/input';
 
 	let model = $state('deepseek-chat');
-	let quota: { day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number } | null = $state(null);
+	let quota: {
+		day: string;
+		turns: number;
+		prompt_t: number;
+		compl_t: number;
+		cost_usd: number;
+	} | null = $state(null);
 	let quotaError: string | null = $state(null);
 
 	onMount(() => {
@@ -27,7 +33,7 @@
 					.catch(() => {
 						quotaError = 'quota unavailable';
 					});
-		}
+			}
 		} catch {
 			// ignore
 		}
@@ -69,7 +75,10 @@
 		{#if quota}
 			<div class="rounded-xl border p-4">
 				<p class="text-sm font-medium">Quota \u2014 {quota.day}</p>
-				<p class="text-sm text-muted-foreground">Turns: {quota.turns} \u00b7 Prompt: {quota.prompt_t} \u00b7 Completion: {quota.compl_t} \u00b7 Cost: ${quota.cost_usd.toFixed(4)}</p>
+				<p class="text-sm text-muted-foreground">
+					Turns: {quota.turns} \u00b7 Prompt: {quota.prompt_t} \u00b7 Completion: {quota.compl_t} \u00b7
+					Cost: ${quota.cost_usd.toFixed(4)}
+				</p>
 			</div>
 		{:else if quotaError}
 			<div class="rounded-xl border border-dashed p-4">

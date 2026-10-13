@@ -9,12 +9,12 @@ import * as v from 'valibot';
 export { MetaCell, SessionCell };
 
 const LoginSchema = v.strictObject({
-	passphrase: v.string(),
+	passphrase: v.string()
 });
 
 const CreateSessionSchema = v.strictObject({
 	title: v.optional(v.string()),
-	model: v.optional(v.string()),
+	model: v.optional(v.string())
 });
 
 function getClientIp(request: Request): string {
@@ -48,7 +48,7 @@ async function recordFailedAttempt(request: Request): Promise<void> {
 	}
 	const next = String(count + 1);
 	const res = new Response(next, {
-		headers: { 'Cache-Control': 'max-age=900', 'content-type': 'text/plain' },
+		headers: { 'Cache-Control': 'max-age=900', 'content-type': 'text/plain' }
 	});
 	await cache.put(key, res.clone());
 }
@@ -90,7 +90,7 @@ export default {
 			return json({
 				ok: true,
 				meta: await meta.ping(),
-				session: await session.ping(),
+				session: await session.ping()
 			});
 		}
 
@@ -191,7 +191,7 @@ export default {
 			const authErr = await requireUserAuth(request, env);
 			if (authErr) return authErr;
 			const result = await getModels(
-				env as unknown as { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string },
+				env as unknown as { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string }
 			);
 			return json(result);
 		}
@@ -274,8 +274,8 @@ export default {
 			return new Response(jsonl, {
 				headers: {
 					'content-type': 'text/plain; charset=utf-8',
-					'content-disposition': `attachment; filename="${id}.jsonl"`,
-				},
+					'content-disposition': `attachment; filename="${id}.jsonl"`
+				}
 			});
 		}
 
@@ -331,5 +331,5 @@ export default {
 
 		// Assets fallback (SPA)
 		return env.ASSETS.fetch(request);
-	},
+	}
 } satisfies ExportedHandler<Env>;

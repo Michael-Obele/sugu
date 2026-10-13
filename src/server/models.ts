@@ -12,7 +12,7 @@ export type Usage = { promptTokens?: number; completionTokens?: number; costUsd?
 export interface ModelAdapter {
 	stream(
 		req: { model: string; messages: Msg[]; tools?: ToolDef[]; maxTokens?: number },
-		signal: AbortSignal,
+		signal: AbortSignal
 	): AsyncIterable<{ delta?: string; toolCall?: ToolCall; usage?: Usage }>;
 }
 
@@ -41,7 +41,7 @@ const FALLBACK_MODELS: ModelInfo[] = [
 		label: 'DeepSeek Reasoner',
 		provider: 'deepseek',
 		price: { promptPerM: 0.55, completionPerM: 2.19 },
-		priceKnown: true,
+		priceKnown: true
 	},
 	{
 		id: 'openai/gpt-4o',
@@ -49,7 +49,7 @@ const FALLBACK_MODELS: ModelInfo[] = [
 		provider: 'openrouter',
 		contextLength: 128000,
 		price: { promptPerM: 2.5, completionPerM: 10 },
-		priceKnown: true,
+		priceKnown: true
 	},
 	{
 		id: 'openai/gpt-4o-mini',
@@ -57,7 +57,7 @@ const FALLBACK_MODELS: ModelInfo[] = [
 		provider: 'openrouter',
 		contextLength: 128000,
 		price: { promptPerM: 0.15, completionPerM: 0.6 },
-		priceKnown: true,
+		priceKnown: true
 	},
 	{
 		id: 'anthropic/claude-3.5-sonnet',
@@ -65,7 +65,7 @@ const FALLBACK_MODELS: ModelInfo[] = [
 		provider: 'openrouter',
 		contextLength: 200000,
 		price: { promptPerM: 3, completionPerM: 15 },
-		priceKnown: true,
+		priceKnown: true
 	},
 	{
 		id: 'google/gemini-2.0-flash-001',
@@ -73,7 +73,7 @@ const FALLBACK_MODELS: ModelInfo[] = [
 		provider: 'openrouter',
 		contextLength: 128000,
 		price: { promptPerM: 0.1, completionPerM: 0.4 },
-		priceKnown: true,
+		priceKnown: true
 	},
 	{
 		id: 'meta-llama/llama-3.1-70b-instruct',
@@ -81,8 +81,8 @@ const FALLBACK_MODELS: ModelInfo[] = [
 		provider: 'openrouter',
 		contextLength: 131072,
 		price: { promptPerM: 0.59, completionPerM: 0.79 },
-		priceKnown: true,
-	},
+		priceKnown: true
+	}
 ];
 
 // Keep DEFAULT_MODELS for backward compat (batch2a tests) — alias to fallback.
@@ -145,7 +145,7 @@ export function parseOpenRouterPayload(payload: unknown): ModelInfo[] {
 			provider: 'openrouter',
 			contextLength,
 			price,
-			priceKnown,
+			priceKnown
 		});
 	}
 	return out;
@@ -328,13 +328,13 @@ function buildRequestBody(model: string, messages: Msg[], tools?: ToolDef[], max
 	const body: Record<string, unknown> = {
 		model,
 		messages: messages.map((m) => ({ role: m.role, content: m.content })),
-		stream: true,
+		stream: true
 	};
 	if (maxTokens !== undefined) body['max_tokens'] = maxTokens;
 	if (tools && tools.length > 0) {
 		body['tools'] = tools.map((t) => ({
 			type: 'function',
-			function: { name: t.name, description: t.description ?? '', parameters: t.parameters ?? {} },
+			function: { name: t.name, description: t.description ?? '', parameters: t.parameters ?? {} }
 		}));
 	}
 	return body;
@@ -343,7 +343,7 @@ function buildRequestBody(model: string, messages: Msg[], tools?: ToolDef[], max
 async function* streamFromSse(
 	response: Response,
 	signal: AbortSignal,
-	model: string,
+	model: string
 ): AsyncIterable<{ delta?: string; toolCall?: ToolCall; usage?: Usage }> {
 	if (!response.ok) {
 		const text = await response.text().catch(() => '');
@@ -379,8 +379,8 @@ async function* streamFromSse(
 							toolCall: {
 								id: (tc['id'] as string) ?? '',
 								name: (fn?.['name'] as string) ?? '',
-								arguments: (fn?.['arguments'] as string) ?? '',
-							},
+								arguments: (fn?.['arguments'] as string) ?? ''
+							}
 						};
 					}
 				}
@@ -406,17 +406,17 @@ class DeepSeekAdapter implements ModelAdapter {
 	constructor(private apiKey: string) {}
 	async *stream(
 		req: { model: string; messages: Msg[]; tools?: ToolDef[]; maxTokens?: number },
-		signal: AbortSignal,
+		signal: AbortSignal
 	): AsyncIterable<{ delta?: string; toolCall?: ToolCall; usage?: Usage }> {
 		const body = buildRequestBody(req.model, req.messages, req.tools, req.maxTokens);
 		const res = await fetch('https://api.deepseek.com/chat/completions', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${this.apiKey}`,
+				authorization: `Bearer ${this.apiKey}`
 			},
 			body: JSON.stringify(body),
-			signal,
+			signal
 		});
 		yield* streamFromSse(res, signal, req.model);
 	}
@@ -426,7 +426,7 @@ class OpenRouterAdapter implements ModelAdapter {
 	constructor(private apiKey: string) {}
 	async *stream(
 		req: { model: string; messages: Msg[]; tools?: ToolDef[]; maxTokens?: number },
-		signal: AbortSignal,
+		signal: AbortSignal
 	): AsyncIterable<{ delta?: string; toolCall?: ToolCall; usage?: Usage }> {
 		const body = buildRequestBody(req.model, req.messages, req.tools, req.maxTokens);
 		const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -435,10 +435,10 @@ class OpenRouterAdapter implements ModelAdapter {
 				'content-type': 'application/json',
 				authorization: `Bearer ${this.apiKey}`,
 				'http-referer': 'https://sugu.app',
-				'x-title': 'Sugu',
+				'x-title': 'Sugu'
 			},
 			body: JSON.stringify(body),
-			signal,
+			signal
 		});
 		yield* streamFromSse(res, signal, req.model);
 	}
@@ -452,7 +452,7 @@ export class StubAdapter implements ModelAdapter {
 	constructor(private opts?: { fail?: boolean; text?: string }) {}
 	async *stream(
 		_req: { model: string; messages: Msg[]; tools?: ToolDef[]; maxTokens?: number },
-		signal: AbortSignal,
+		signal: AbortSignal
 	): AsyncIterable<{ delta?: string; toolCall?: ToolCall; usage?: Usage }> {
 		if (this.opts?.fail) {
 			throw new Error('stub model failure');
@@ -491,7 +491,7 @@ export function resolveAdapter(model: string, env: ModelEnv): ModelAdapter {
 	if (env.MODEL_STUB === '1') {
 		return new StubAdapter({
 			fail: env.MODEL_STUB_FAIL === '1',
-			text: env.MODEL_STUB_TEXT,
+			text: env.MODEL_STUB_TEXT
 		});
 	}
 
@@ -559,7 +559,7 @@ function parseSuguModelsOverride(raw: string): ModelInfo[] | null {
 				label: m.label,
 				provider: m.provider,
 				contextLength: typeof m.contextLength === 'number' ? m.contextLength : undefined,
-				priceKnown: false,
+				priceKnown: false
 			};
 			if (m.price && typeof m.price.promptPerM === 'number' && typeof m.price.completionPerM === 'number') {
 				info.price = { promptPerM: m.price.promptPerM, completionPerM: m.price.completionPerM };
@@ -614,8 +614,8 @@ async function writeCache(cache: Cache | null, result: CatalogueResult): Promise
 		const res = new Response(JSON.stringify(result), {
 			headers: {
 				'content-type': 'application/json',
-				'Cache-Control': `max-age=${CACHE_TTL_MS / 1000}`,
-			},
+				'Cache-Control': `max-age=${CACHE_TTL_MS / 1000}`
+			}
 		});
 		await cache.put(req, res);
 	} catch {
@@ -633,7 +633,7 @@ async function writeCache(cache: Cache | null, result: CatalogueResult): Promise
  */
 export async function getModels(
 	env: { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string },
-	opts?: { fetchImpl?: typeof fetch; cacheImpl?: Cache | null },
+	opts?: { fetchImpl?: typeof fetch; cacheImpl?: Cache | null }
 ): Promise<CatalogueResult> {
 	// Static override wins — no fetch, no cache
 	if (env.SUGU_MODELS) {

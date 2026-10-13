@@ -38,7 +38,7 @@ describe('worker edge', () => {
 	test('GET /api/healthz with token -> 200 and two pongs', async () => {
 		const token = await signToken(SECRET);
 		const res = await fetch(`${BASE}/api/healthz`, {
-			headers: { Authorization: `Bearer ${token}` },
+			headers: { Authorization: `Bearer ${token}` }
 		});
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as Record<string, unknown>;
@@ -56,7 +56,7 @@ describe('worker edge', () => {
 		const res = await fetch(`${BASE}/api/login`, {
 			method: 'POST',
 			headers: loginHeaders('10.0.0.1'),
-			body: JSON.stringify({ passphrase: 'wrong' }),
+			body: JSON.stringify({ passphrase: 'wrong' })
 		});
 		expect(res.status).toBe(401);
 		const body = (await res.json()) as Record<string, unknown>;
@@ -67,7 +67,7 @@ describe('worker edge', () => {
 		const loginRes = await fetch(`${BASE}/api/login`, {
 			method: 'POST',
 			headers: loginHeaders('10.0.0.2'),
-			body: JSON.stringify({ passphrase: PASSPHRASE }),
+			body: JSON.stringify({ passphrase: PASSPHRASE })
 		});
 		expect(loginRes.status).toBe(200);
 		const loginBody = (await loginRes.json()) as { token: string };
@@ -75,7 +75,7 @@ describe('worker edge', () => {
 		expect(loginBody.token.length).toBeGreaterThan(10);
 
 		const sessionsRes = await fetch(`${BASE}/api/sessions`, {
-			headers: { Authorization: `Bearer ${loginBody.token}` },
+			headers: { Authorization: `Bearer ${loginBody.token}` }
 		});
 		expect(sessionsRes.status).toBe(200);
 		const sessions = await sessionsRes.json();
@@ -92,7 +92,7 @@ describe('worker edge', () => {
 	test('GET /api/sessions with valid token -> array', async () => {
 		const token = await signToken(SECRET);
 		const res = await fetch(`${BASE}/api/sessions`, {
-			headers: { Authorization: `Bearer ${token}` },
+			headers: { Authorization: `Bearer ${token}` }
 		});
 		expect(res.status).toBe(200);
 		const body = await res.json();
@@ -105,14 +105,14 @@ describe('worker edge', () => {
 		const createRes = await fetch(`${BASE}/api/sessions`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-			body: JSON.stringify({ title }),
+			body: JSON.stringify({ title })
 		});
 		expect(createRes.status).toBe(201);
 		const created = (await createRes.json()) as { id: string; title: string };
 		expect(created.title).toBe(title);
 
 		const listRes = await fetch(`${BASE}/api/sessions`, {
-			headers: { Authorization: `Bearer ${token}` },
+			headers: { Authorization: `Bearer ${token}` }
 		});
 		expect(listRes.status).toBe(200);
 		const list = (await listRes.json()) as { id: string }[];
@@ -122,7 +122,7 @@ describe('worker edge', () => {
 
 	test('GET /ws with no token -> 401 and DO never touched', async () => {
 		const res = await fetch(`${BASE}/ws?sessionId=test-no-token-${Date.now()}`, {
-			headers: { Upgrade: 'websocket' },
+			headers: { Upgrade: 'websocket' }
 		});
 		// Worker should reject before proxying — 401 JSON, not 101 or 426
 		expect(res.status).toBe(401);
@@ -136,7 +136,7 @@ describe('worker edge', () => {
 			const res = await fetch(`${BASE}${path}`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', Authorization: `Bearer ${userToken}` },
-				body: JSON.stringify(path.includes('compute') ? { iterations: 100 } : { count: 10 }),
+				body: JSON.stringify(path.includes('compute') ? { iterations: 100 } : { count: 10 })
 			});
 			expect(res.status).toBe(401);
 		}
@@ -144,7 +144,7 @@ describe('worker edge', () => {
 		const res2 = await fetch(`${BASE}/api/probe/compute`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ iterations: 100 }),
+			body: JSON.stringify({ iterations: 100 })
 		});
 		expect(res2.status).toBe(401);
 	});
@@ -153,7 +153,7 @@ describe('worker edge', () => {
 		const computeRes = await fetch(`${BASE}/api/probe/compute`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json', Authorization: `Bearer ${ADMIN}` },
-			body: JSON.stringify({ iterations: 1000 }),
+			body: JSON.stringify({ iterations: 1000 })
 		});
 		expect(computeRes.status).toBe(200);
 		const computeBody = (await computeRes.json()) as { iterations: number; elapsedMs: number };
@@ -163,7 +163,7 @@ describe('worker edge', () => {
 		const rowsRes = await fetch(`${BASE}/api/probe/rows`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json', Authorization: `Bearer ${ADMIN}` },
-			body: JSON.stringify({ count: 5 }),
+			body: JSON.stringify({ count: 5 })
 		});
 		expect(rowsRes.status).toBe(200);
 		const rowsBody = (await rowsRes.json()) as { written: number };
@@ -193,7 +193,7 @@ describe('worker edge', () => {
 		const res = await fetch(`${BASE}/api/login`, {
 			method: 'POST',
 			headers: loginHeaders('10.0.0.99'),
-			body: JSON.stringify({ passphrase: '' }),
+			body: JSON.stringify({ passphrase: '' })
 		});
 		expect(res.status).toBe(401);
 	});
@@ -204,14 +204,14 @@ describe('worker edge', () => {
 			const res = await fetch(`${BASE}/api/login`, {
 				method: 'POST',
 				headers: loginHeaders(throttleIp),
-				body: JSON.stringify({ passphrase: 'wrong-throttle' }),
+				body: JSON.stringify({ passphrase: 'wrong-throttle' })
 			});
 			expect(res.status).toBe(401);
 		}
 		const sixth = await fetch(`${BASE}/api/login`, {
 			method: 'POST',
 			headers: loginHeaders(throttleIp),
-			body: JSON.stringify({ passphrase: 'wrong-throttle' }),
+			body: JSON.stringify({ passphrase: 'wrong-throttle' })
 		});
 		expect(sixth.status).toBe(429);
 		const body = (await sixth.json()) as Record<string, unknown>;

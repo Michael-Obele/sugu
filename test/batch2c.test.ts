@@ -7,7 +7,7 @@ import {
 	__setPriceMapForTests,
 	__resetPriceMapForTests,
 	getModels,
-	CACHE_TTL_MS,
+	CACHE_TTL_MS
 } from '../src/server/models';
 import fixture from './fixtures/openrouter-sample.json';
 
@@ -29,13 +29,13 @@ function makeCache(): { cache: Cache; putCalls: number } {
 		},
 		async delete(req: Request): Promise<boolean> {
 			return store.delete(req.url);
-		},
+		}
 	} as unknown as Cache;
 	return {
 		cache,
 		get putCalls() {
 			return putCalls;
-		},
+		}
 	};
 }
 
@@ -146,7 +146,7 @@ describe('batch2c: catalogue caching', () => {
 		const stale: unknown = {
 			models: parseOpenRouterPayload(fixture),
 			source: 'live' as const,
-			fetchedAt: new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString(),
+			fetchedAt: new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString()
 		};
 		await cache.put(new Request('https://sugu-cache/models'), new Response(JSON.stringify(stale)));
 		const result = await getModels({}, { fetchImpl: countingFetch, cacheImpl: cache });
@@ -163,7 +163,7 @@ describe('batch2c: catalogue caching', () => {
 		const stale: unknown = {
 			models: parseOpenRouterPayload(fixture),
 			source: 'live' as const,
-			fetchedAt: new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString(),
+			fetchedAt: new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString()
 		};
 		await cache.put(new Request('https://sugu-cache/models'), new Response(JSON.stringify(stale)));
 		const result = await getModels({}, { fetchImpl: makeFetchFail(), cacheImpl: cache });
@@ -185,7 +185,7 @@ describe('batch2c: catalogue caching', () => {
 describe('batch2c: SUGU_MODELS and SUGU_MODELS_FILTER', () => {
 	test('SUGU_MODELS static override wins', async () => {
 		const custom = JSON.stringify([
-			{ id: 'custom/model', label: 'Custom', provider: 'openrouter', price: { promptPerM: 1, completionPerM: 2 }, priceKnown: true },
+			{ id: 'custom/model', label: 'Custom', provider: 'openrouter', price: { promptPerM: 1, completionPerM: 2 }, priceKnown: true }
 		]);
 		// Even with a failing fetch, override should win without hitting network
 		const result = await getModels({ SUGU_MODELS: custom }, { fetchImpl: makeFetchFail(), cacheImpl: makeCache().cache });

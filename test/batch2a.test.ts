@@ -19,7 +19,7 @@ async function createSession(token: string, title?: string, model?: string): Pro
 	const res = await fetch(`${BASE}/api/sessions`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', ...authHeader(token) },
-		body: JSON.stringify(body),
+		body: JSON.stringify(body)
 	});
 	expect(res.status).toBe(201);
 	return (await res.json()) as { id: string; title: string; model: string };
@@ -40,7 +40,7 @@ function wsConnect(sessionId: string, token: string): Promise<WebSocket> {
 function waitForFrames(
 	ws: WebSocket,
 	predicate: (frames: Record<string, unknown>[]) => boolean,
-	timeoutMs = 5000,
+	timeoutMs = 5000
 ): Promise<Record<string, unknown>[]> {
 	return new Promise((resolve, reject) => {
 		const frames: Record<string, unknown>[] = [];
@@ -84,7 +84,7 @@ describe('batch2a: PATCH /api/sessions/:id', () => {
 		const res = await fetch(`${BASE}/api/sessions/${created.id}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json', ...authHeader(token) },
-			body: JSON.stringify({ title: 'new title' }),
+			body: JSON.stringify({ title: 'new title' })
 		});
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as { title: string };
@@ -103,7 +103,7 @@ describe('batch2a: PATCH /api/sessions/:id', () => {
 			const res = await fetch(`${BASE}/api/sessions/${created.id}`, {
 				method: 'PATCH',
 				headers: { 'content-type': 'application/json', ...authHeader(token) },
-				body: JSON.stringify({ title: bad }),
+				body: JSON.stringify({ title: bad })
 			});
 			expect(res.status).toBe(400);
 		}
@@ -114,7 +114,7 @@ describe('batch2a: PATCH /api/sessions/:id', () => {
 		const res = await fetch(`${BASE}/api/sessions/nonexistent-id-12345`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json', ...authHeader(token) },
-			body: JSON.stringify({ title: 'hello' }),
+			body: JSON.stringify({ title: 'hello' })
 		});
 		expect(res.status).toBe(404);
 	});
@@ -126,7 +126,7 @@ describe('batch2a: PATCH /api/sessions/:id', () => {
 		const res = await fetch(`${BASE}/api/sessions/${created.id}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json', ...authHeader(token) },
-			body: JSON.stringify({ title: long }),
+			body: JSON.stringify({ title: long })
 		});
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as { title: string };
@@ -140,7 +140,7 @@ describe('batch2a: PATCH /api/sessions/:id', () => {
 		const res = await fetch(`${BASE}/api/sessions/${created.id}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json', ...authHeader(token) },
-			body: JSON.stringify({ model: 'deepseek-reasoner' }),
+			body: JSON.stringify({ model: 'deepseek-reasoner' })
 		});
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as { model: string };
@@ -154,7 +154,7 @@ describe('batch2a: DELETE /api/sessions/:id', () => {
 		const created = await createSession(token, 'to-delete');
 		const del1 = await fetch(`${BASE}/api/sessions/${created.id}`, {
 			method: 'DELETE',
-			headers: authHeader(token),
+			headers: authHeader(token)
 		});
 		expect(del1.status).toBe(200);
 		const body1 = (await del1.json()) as { ok: boolean };
@@ -166,7 +166,7 @@ describe('batch2a: DELETE /api/sessions/:id', () => {
 
 		const del2 = await fetch(`${BASE}/api/sessions/${created.id}`, {
 			method: 'DELETE',
-			headers: authHeader(token),
+			headers: authHeader(token)
 		});
 		expect(del2.status).toBe(200);
 		const body2 = (await del2.json()) as { ok: boolean };
@@ -177,7 +177,7 @@ describe('batch2a: DELETE /api/sessions/:id', () => {
 		const token = await signToken(SECRET);
 		const res = await fetch(`${BASE}/api/sessions/does-not-exist-xyz`, {
 			method: 'DELETE',
-			headers: authHeader(token),
+			headers: authHeader(token)
 		});
 		expect(res.status).toBe(200);
 	});
@@ -196,7 +196,7 @@ describe('batch2a: GET /api/sessions/:id/export', () => {
 		await new Promise((r) => setTimeout(r, 300));
 
 		const res = await fetch(`${BASE}/api/sessions/${created.id}/export`, {
-			headers: authHeader(token),
+			headers: authHeader(token)
 		});
 		expect(res.status).toBe(200);
 		expect(res.headers.get('content-type')).toContain('text/plain');
@@ -224,7 +224,7 @@ describe('batch2a: GET /api/sessions/:id/export', () => {
 	test('export 404 for unknown id', async () => {
 		const token = await signToken(SECRET);
 		const res = await fetch(`${BASE}/api/sessions/nonexistent-export-id/export`, {
-			headers: authHeader(token),
+			headers: authHeader(token)
 		});
 		expect(res.status).toBe(404);
 	});

@@ -18,6 +18,9 @@
 		"lint": "vp lint",
 		"lint:fix": "vp lint --fix"
 	},
+	"dependencies": {
+		"valibot": "^1.5.0"
+	},
 	"devDependencies": {
 		"@types/bun": "^1.4.2",
 		"@types/node": "^26.6.5",
@@ -25,8 +28,5 @@
 		"typescript": "^5.5.2",
 		"vite-plus": "1.1.0",
 		"wrangler": "^4.149.0"
-	},
-	"dependencies": {
-		"valibot": "^1.5.0"
 	}
 }

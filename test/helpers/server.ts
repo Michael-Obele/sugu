@@ -21,7 +21,7 @@ function randomHex(bytes = 20): string {
 export const TEST_SECRETS = {
 	SUGU_PASSPHRASE: 'test-passphrase-' + randomHex(8),
 	TOKEN_SECRET: randomHex(20),
-	ADMIN_TOKEN: randomHex(20),
+	ADMIN_TOKEN: randomHex(20)
 };
 
 // Resolve the project from this file rather than from the working directory or a
@@ -120,7 +120,7 @@ export async function startDevServer(opts?: { port?: number }): Promise<DevServe
 			'--var',
 			`ADMIN_TOKEN:${TEST_SECRETS.ADMIN_TOKEN}`,
 			'--var',
-			'MODEL_STUB:1',
+			'MODEL_STUB:1'
 		],
 		cwd: PROJECT_ROOT,
 		env,
@@ -150,6 +150,6 @@ export async function startDevServer(opts?: { port?: number }): Promise<DevServe
 			stopped = true;
 			await killProcess(proc);
 			await rm(persistDir, { recursive: true, force: true }).catch(() => {});
-		},
+		}
 	};
 }

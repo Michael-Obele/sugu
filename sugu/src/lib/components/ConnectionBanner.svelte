@@ -9,10 +9,22 @@
 
 	let visible = $derived(state === 'reconnecting' || state === 'connecting');
 	let label = $derived(
-		state === 'reconnecting' ? 'Reconnecting\u2026' : state === 'connecting' ? 'Connecting\u2026' : state === 'closed' ? 'Offline' : ''
+		state === 'reconnecting'
+			? 'Reconnecting\u2026'
+			: state === 'connecting'
+				? 'Connecting\u2026'
+				: state === 'closed'
+					? 'Offline'
+					: ''
 	);
 	let dotClass = $derived(
-		state === 'open' ? 'bg-emerald-500' : state === 'reconnecting' ? 'bg-warning' : state === 'connecting' ? 'bg-muted-foreground' : 'bg-destructive'
+		state === 'open'
+			? 'bg-emerald-500'
+			: state === 'reconnecting'
+				? 'bg-warning'
+				: state === 'connecting'
+					? 'bg-muted-foreground'
+					: 'bg-destructive'
 	);
 </script>
 
@@ -25,7 +37,8 @@
 			'safe-top'
 		)}
 	>
-		<span class="h-2 w-2 animate-pulse rounded-full bg-warning-foreground" aria-hidden="true"></span>
+		<span class="h-2 w-2 animate-pulse rounded-full bg-warning-foreground" aria-hidden="true"
+		></span>
 		{label}
 	</div>
 {:else if state === 'closed'}

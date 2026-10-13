@@ -50,14 +50,26 @@ export function createAnnouncer(intervalMs = 1000) {
 		return current;
 	}
 
-	return { throttled, flush, get currentText() { return current; }, get pendingText() { return pending; } };
+	return {
+		throttled,
+		flush,
+		get currentText() {
+			return current;
+		},
+		get pendingText() {
+			return pending;
+		}
+	};
 }
 
 /**
  * Pure function for testing: simulate throttling over a sequence of deltas.
  * Returns the announced values at each step (with trailing flush at end).
  */
-export function simulateAnnounce(deltas: string[], intervalMs = 1000): { announced: string[]; final: string } {
+export function simulateAnnounce(
+	deltas: string[],
+	intervalMs = 1000
+): { announced: string[]; final: string } {
 	let last = 0;
 	let pending: string | null = null;
 	let current = '';

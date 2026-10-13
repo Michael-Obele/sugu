@@ -20,17 +20,17 @@ git**; the code lives at the repo root.
 
 ## Layout
 
-| Path                        | What                                                    |
-| --------------------------- | ------------------------------------------------------- |
-| `wrangler.jsonc`            | the deploy contract: assets binding + DO classes         |
-| `src/worker.ts`             | Worker entry: routing, auth, WS upgrade, assets fallback |
-| `src/session-cell.ts`       | `SessionCell` DO — one per conversation, SQLite + WS     |
-| `src/meta-cell.ts`          | `MetaCell` DO — the session index                        |
-| `src/server/*`              | pure helpers: auth, http, probe                          |
-| `src/shared/contracts.ts`   | Valibot wire schemas shared with the SPA                 |
-| `sugu/`                     | SvelteKit SPA (`adapter-static` → `sugu/build`)          |
-| `scripts/`                  | local Bun scripts (quota probe, opencode import)         |
-| `test/`                     | `bun test`; integration tests start their own dev server |
+| Path                      | What                                                     |
+| ------------------------- | -------------------------------------------------------- |
+| `wrangler.jsonc`          | the deploy contract: assets binding + DO classes         |
+| `src/worker.ts`           | Worker entry: routing, auth, WS upgrade, assets fallback |
+| `src/session-cell.ts`     | `SessionCell` DO — one per conversation, SQLite + WS     |
+| `src/meta-cell.ts`        | `MetaCell` DO — the session index                        |
+| `src/server/*`            | pure helpers: auth, http, probe                          |
+| `src/shared/contracts.ts` | Valibot wire schemas shared with the SPA                 |
+| `sugu/`                   | SvelteKit SPA (`adapter-static` → `sugu/build`)          |
+| `scripts/`                | local Bun scripts (quota probe, opencode import)         |
+| `test/`                   | `bun test`; integration tests start their own dev server |
 
 ## Files that must not exist
 
@@ -49,11 +49,11 @@ or Agents SDK task.
   `/workers/platform/limits`.
 - Durable Objects: <https://developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/>
 
-| Command                 | Purpose                  |
-| ----------------------- | ------------------------ |
-| `bun run dev`           | local dev (`wrangler dev`) |
-| `bun run deploy`        | build the SPA, then deploy |
-| `bun run cf-typegen`    | `wrangler types`         |
+| Command              | Purpose                    |
+| -------------------- | -------------------------- |
+| `bun run dev`        | local dev (`wrangler dev`) |
+| `bun run deploy`     | build the SPA, then deploy |
+| `bun run cf-typegen` | `wrangler types`           |
 
 Run `cf-typegen` after changing bindings in `wrangler.jsonc`. Note that a leading `cd` in a
 shell command can be dropped by some agent harnesses, so prefer `--cwd` (bun) and `--config`

@@ -45,7 +45,9 @@
 			streaming && 'streaming'
 		)}
 	>
-		<span class="sr-only" aria-live="polite" aria-atomic="true">{updateAnnounce(text, streaming)}</span>
+		<span class="sr-only" aria-live="polite" aria-atomic="true"
+			>{updateAnnounce(text, streaming)}</span
+		>
 		<p class="break-words whitespace-pre-wrap">{text}</p>
 		{#if interrupted}
 			<div class="mt-2 flex items-center gap-2">

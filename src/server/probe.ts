@@ -5,11 +5,11 @@ import * as v from 'valibot';
 import { errorJson, json } from './http';
 
 const ComputeSchema = v.strictObject({
-	iterations: v.pipe(v.number(), v.finite()),
+	iterations: v.pipe(v.number(), v.finite())
 });
 
 const RowsSchema = v.strictObject({
-	count: v.pipe(v.number(), v.finite()),
+	count: v.pipe(v.number(), v.finite())
 });
 
 export async function handleProbeCompute(request: Request): Promise<Response> {

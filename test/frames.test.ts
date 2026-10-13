@@ -15,7 +15,7 @@ function msg(seq: number, text: string, opts?: { interrupted?: boolean }): Frame
 		id: seq,
 		role: 'assistant',
 		text,
-		...(opts?.interrupted ? { interrupted: true } : {}),
+		...(opts?.interrupted ? { interrupted: true } : {})
 	} as Frame;
 }
 
@@ -161,7 +161,7 @@ describe('frames', () => {
 			runId: 'r1',
 			name: 'sepia.search',
 			status: 'ok',
-			summary: '340 ms',
+			summary: '340 ms'
 		} as Frame;
 		state = applyFrame(state, toolFrame);
 		expect(state.tools.length).toBe(1);
@@ -202,5 +202,4 @@ describe('frames', () => {
 		state = applyFrame(state, { v: 1, t: 'err', code: 'busy', message: 'already busy' } as Frame);
 		expect(state.errs[0]!.code).toBe('busy');
 	});
-
 });

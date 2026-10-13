@@ -55,7 +55,7 @@ export class MetaCell extends DurableObject<Env> {
 			title,
 			model,
 			now,
-			now,
+			now
 		);
 		return {
 			id: opts.id,
@@ -64,7 +64,7 @@ export class MetaCell extends DurableObject<Env> {
 			createdAt: now,
 			updatedAt: now,
 			lastSeq: 0,
-			archived: false,
+			archived: false
 		};
 	}
 
@@ -114,8 +114,12 @@ export class MetaCell extends DurableObject<Env> {
 		return changed.c > 0;
 	}
 
-	async getUsage(day: string): Promise<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | null> {
-		const row = this.ctx.storage.sql.exec('SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?', day).one() as unknown as { day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | undefined;
+	async getUsage(
+		day: string
+	): Promise<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | null> {
+		const row = this.ctx.storage.sql
+			.exec('SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?', day)
+			.one() as unknown as { day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | undefined;
 		if (!row) return null;
 		return row;
 	}
@@ -126,7 +130,7 @@ export class MetaCell extends DurableObject<Env> {
 			day,
 			promptT,
 			complT,
-			costUsd,
+			costUsd
 		);
 	}
 }
@@ -139,6 +143,6 @@ function rowToMeta(row: Record<string, unknown>): SessionMeta {
 		createdAt: row['created_at'] as string,
 		updatedAt: row['updated_at'] as string,
 		lastSeq: row['last_seq'] as number,
-		archived: Boolean(row['archived']),
+		archived: Boolean(row['archived'])
 	};
 }
