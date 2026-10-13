@@ -4,6 +4,8 @@ import { parseFrame } from './shared/contracts';
 import { verifyToken } from './server/auth';
 import { resolveAdapter } from './server/models';
 import { parseSkillSources, resolveSkillsForTurn } from './server/skills';
+import { McpClient, parseMcpServers, truncateResult } from './server/mcp';
+import type { ToolDef } from './server/models';
 import type { Frame } from './shared/contracts';
 import type { Msg } from './server/models';
 
@@ -20,6 +22,12 @@ type EnvWithModels = Env & {
 export class SessionCell extends DurableObject<Env> {
 	private busy = false;
 	private abortCtrl: AbortController | null = null;
+	// MCP tool loop: AR-6 wins over the 5-iteration preference.
+	// Real row budget per turn: 1 user INSERT + 1 assistant reserve INSERT +
+	// 1 assistant UPDATE + 1 usage UPSERT + N tool_runs INSERTs = 4 + N.
+	// N=5 gives 9 > hard limit 8, so cap at 4 (4+N=8). See batch-3b brief.
+	private static readonly MAX_TOOL_ITERATIONS = 4;
+
 	// reservation: at turn start we INSERT the assistant row immediately with
 	// empty text and meta { interrupted: true } and capture its id as seq. Token
 	// frames and the final msg reuse that seq; on completion we UPDATE the same
@@ -449,6 +457,32 @@ export class SessionCell extends DurableObject<Env> {
 			}
 		}
 
+		// MCP: resolve servers and tools (config-driven, no hardcoded list)
+		let mcpTools: ToolDef[] = [];
+		let mcpMapping: Map<string, { server: import('./server/mcp').ResolvedServer; originalName: string }> | null = null;
+		let mcpClient: import('./server/mcp').McpClient | null = null;
+		let mcpSubrequests = 0;
+		try {
+			const mcpEnv = this.env as unknown as Record<string, string | undefined>;
+			const resolvedServers = parseMcpServers(mcpEnv);
+			if (resolvedServers.length > 0) {
+				mcpClient = new McpClient(resolvedServers, fetch);
+				const listed = await mcpClient.listTools();
+				mcpTools = listed.tools.map((td) => ({
+					name: td.name,
+					description: td.description,
+					parameters: td.inputSchema ?? {}
+				}));
+				mcpMapping = listed.mapping;
+				// AR-5: tools/list counts as subrequests (one per server, but we count as 1 for budget simplicity)
+				// Actually count initialize + tools/list per server; worst case 2 per server.
+				// For AR-5 reporting we track mcpSubrequests.
+				mcpSubrequests = resolvedServers.length * 2;
+			}
+		} catch {
+			// MCP listing failure is not fatal — continue without tools
+		}
+
 		// Build prompt: system + skills + capped history
 		const messages = this.buildMessages(frame.text, skillsInjection, skillsNotes);
 		const model = 'deepseek-chat';
@@ -458,40 +492,172 @@ export class SessionCell extends DurableObject<Env> {
 		let completionTokens = 0;
 		let costUsd = 0;
 		let modelError: string | null = null;
+		let toolIterations = 0;
+		// Track subrequests for AR-5: model call (1) + MCP calls + skills fetches
+		let subrequests = 1 + mcpSubrequests + _skillsSubrequests;
 
-		try {
-			const adapter = resolveAdapter(model, this.env as EnvWithModels);
-			for await (const chunk of adapter.stream({ model, messages, maxTokens: 4096 }, signal)) {
-				if (signal.aborted) break;
-				if (chunk.delta) {
-					// AR-8: no frame > 16 KB — truncate delta if needed
-					let delta = chunk.delta;
-					if (finalText.length + delta.length > 16000) {
-						delta = delta.slice(0, 16000 - finalText.length - 14) + '…[truncated]';
+		// Tool loop: model may yield toolCall; we execute, emit tool frames, feed back, continue.
+		// Cap at MAX_TOOL_ITERATIONS (4) so row budget stays ≤8 (AR-6 wins).
+		const toolMessages: { role: 'assistant' | 'user'; content: string }[] = [];
+		let loopMessages = [...messages];
+
+		outer: for (let iter = 0; iter <= SessionCell.MAX_TOOL_ITERATIONS; iter++) {
+			let sawToolCall = false;
+			let pendingToolCall: { id: string; name: string; arguments: string } | null = null;
+			try {
+				const adapter = resolveAdapter(model, this.env as EnvWithModels);
+				const toolsForModel = mcpTools.length > 0 ? mcpTools : undefined;
+				for await (const chunk of adapter.stream({ model, messages: loopMessages, tools: toolsForModel, maxTokens: 4096 }, signal)) {
+					if (signal.aborted) break;
+					if (chunk.delta) {
+						let delta = chunk.delta;
+						if (finalText.length + delta.length > 16000) {
+							delta = delta.slice(0, 16000 - finalText.length - 14) + '…[truncated]';
+						}
+						if (delta.length === 0) continue;
+						finalText += delta;
+						this.pendingText = finalText;
+						try {
+							ws.send(JSON.stringify({ v: 1, t: 'token', seq: nextSeq, delta }));
+						} catch {
+							this.abortCtrl?.abort();
+							break;
+						}
 					}
-					if (delta.length === 0) continue;
-					finalText += delta;
-					this.pendingText = finalText;
-					try {
-						ws.send(JSON.stringify({ v: 1, t: 'token', seq: nextSeq, delta }));
-					} catch {
-						this.abortCtrl?.abort();
+					if (chunk.usage) {
+						promptTokens = chunk.usage.promptTokens ?? 0;
+						completionTokens = chunk.usage.completionTokens ?? 0;
+						costUsd = chunk.usage.costUsd ?? 0;
+					}
+					if (chunk.toolCall) {
+						pendingToolCall = {
+							id: chunk.toolCall.id || `tool-${Date.now()}-${iter}`,
+							name: chunk.toolCall.name,
+							arguments: chunk.toolCall.arguments
+						};
+						sawToolCall = true;
 						break;
 					}
 				}
-				if (chunk.usage) {
-					promptTokens = chunk.usage.promptTokens ?? 0;
-					completionTokens = chunk.usage.completionTokens ?? 0;
-					costUsd = chunk.usage.costUsd ?? 0;
+			} catch (e) {
+				if (signal.aborted) {
+					// Aborted — will be handled as interrupted below
+				} else {
+					modelError = e instanceof Error ? e.message : String(e);
 				}
-				// toolCall is out of scope for Task 4 — ignored
+				break outer;
 			}
-		} catch (e) {
-			if (signal.aborted) {
-				// Aborted — will be handled as interrupted below
+
+			if (signal.aborted) break outer;
+			if (modelError) break outer;
+			if (!sawToolCall || !pendingToolCall) break outer;
+
+			// Enforce cap: if we've already done MAX iterations, don't execute another
+			if (toolIterations >= SessionCell.MAX_TOOL_ITERATIONS) {
+				break outer;
+			}
+			toolIterations++;
+			subrequests++;
+
+			// Parse arguments
+			let toolArgs: unknown;
+			try {
+				toolArgs = pendingToolCall.arguments ? JSON.parse(pendingToolCall.arguments) : {};
+			} catch {
+				toolArgs = pendingToolCall.arguments;
+			}
+
+			const runId = pendingToolCall.id;
+			const toolName = pendingToolCall.name;
+
+			const startMs = Date.now();
+			// Emit running frame (live only, not persisted — saves a row write)
+			const toolSeq = this.nextSeq();
+			try {
+				ws.send(
+					JSON.stringify({
+						v: 1,
+						t: 'tool',
+						seq: toolSeq,
+						runId,
+						name: toolName,
+						status: 'running'
+					})
+				);
+			} catch {
+				/* socket gone */
+			}
+
+			// Execute tool
+			let resultText: string;
+			let isError = false;
+			let truncated = false;
+			let durationMs = 0;
+			if (mcpClient && mcpMapping && mcpMapping.has(toolName)) {
+				const callResult = await mcpClient.callTool(toolName, toolArgs);
+				resultText = callResult.text;
+				isError = callResult.isError;
+				truncated = callResult.truncated;
+				durationMs = callResult.durationMs;
 			} else {
-				modelError = e instanceof Error ? e.message : String(e);
+				resultText = `Unknown tool: ${toolName}`;
+				isError = true;
+				durationMs = Date.now() - startMs;
 			}
+
+			// AR-4: truncateResult already applied in mcpClient; also ensure for unknown tool
+			if (!truncated && resultText.length > 0) {
+				const tr = truncateResult(resultText);
+				resultText = tr.text;
+				truncated = tr.truncated;
+			}
+
+			const status = isError ? 'failed' : 'ok';
+			const summary = truncated ? resultText : resultText.slice(0, 800);
+
+			const durationStr = `${durationMs}ms`;
+			const summaryWithDuration = `${summary}${truncated ? ' …[truncated to 48KB]' : ''} (${durationStr})`;
+			// AR-6: 1 row per tool — single INSERT into tool_runs (final, no running→update split).
+			// That's 1 row per tool, so 4 tools = 4+N=8 total (see class comment).
+			this.ctx.storage.sql.exec(
+				'INSERT INTO tool_runs (id, name, args, status, result, ts_start, ts_end) VALUES (?, ?, ?, ?, ?, ?, ?)',
+				runId,
+				toolName,
+				JSON.stringify(toolArgs).slice(0, 8192),
+				status,
+				resultText,
+				nowIso(),
+				nowIso()
+			);
+			const toolFrameSeq = this.nextSeq();
+			try {
+				ws.send(
+					JSON.stringify({
+						v: 1,
+						t: 'tool',
+						seq: toolFrameSeq,
+						runId,
+						name: toolName,
+						status,
+						summary: summaryWithDuration
+					})
+				);
+			} catch {
+				/* socket gone */
+			}
+
+			// Feed result back to model as a tool result message
+			// Use a user-role message containing the tool result (simple, works with all adapters)
+			const toolResultContent = `Tool ${toolName} ${status}: ${resultText}`;
+			loopMessages = [
+				...loopMessages,
+				{ role: 'assistant', content: `[called ${toolName} with ${JSON.stringify(toolArgs)}]` },
+				{ role: 'user', content: toolResultContent }
+			];
+			// Also track for prompt building if needed
+			toolMessages.push({ role: 'user', content: toolResultContent });
+			// Continue loop — next iteration will call model again with tool result
+			if (signal.aborted) break outer;
 		}
 
 		if (signal.aborted) {
@@ -691,6 +857,11 @@ export class SessionCell extends DurableObject<Env> {
 		} catch {
 			// ignore — quota aggregation is best-effort
 		}
+	}
+
+	private nextSeq(): number {
+		const row = this.ctx.storage.sql.exec('SELECT MAX(id) as m FROM events').one() as unknown as { m: number | null };
+		return (row.m ?? 0) + 1;
 	}
 
 	private buildStateFrame(): Frame {

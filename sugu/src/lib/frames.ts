@@ -20,6 +20,8 @@ export type ToolEntry = {
 	name: string;
 	status: 'running' | 'ok' | 'failed';
 	summary?: string;
+	durationMs?: number;
+	truncated?: boolean;
 };
 
 export type ErrEntry = {
@@ -100,7 +102,9 @@ export function applyFrame(state: FrameState, frame: Frame): FrameState {
 				runId: frame.runId,
 				name: frame.name,
 				status: frame.status,
-				summary: frame.summary
+				summary: frame.summary,
+				durationMs: (frame as unknown as { durationMs?: number }).durationMs,
+				truncated: (frame as unknown as { truncated?: boolean }).truncated
 			};
 			const idx = state.tools.findIndex((t) => t.runId === frame.runId);
 			if (idx !== -1) {

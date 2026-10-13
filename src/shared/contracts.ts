@@ -88,7 +88,9 @@ const ToolFrame = v.strictObject({
 	runId: v.string(),
 	name: v.string(),
 	status: v.picklist(['running', 'ok', 'failed']),
-	summary: v.optional(v.string())
+	summary: v.optional(v.string()),
+	durationMs: v.optional(v.number()),
+	truncated: v.optional(v.boolean())
 });
 
 const StateFrame = v.strictObject({

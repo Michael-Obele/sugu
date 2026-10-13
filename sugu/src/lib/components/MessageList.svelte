@@ -148,15 +148,19 @@
 							<Collapsible.Root class="w-full">
 								<Collapsible.Trigger
 									class={cn(
-										'flex min-h-[44px] w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm',
+										'flex min-h-[44px] w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
 										tool.status === 'failed'
 											? 'border-destructive/50 bg-destructive/10 text-destructive'
-											: tool.status === 'running'
-												? 'border-border bg-card text-muted-foreground'
-												: 'border-border bg-card text-muted-foreground'
+											: 'border-border bg-card text-muted-foreground'
 									)}
+									aria-label={`Tool ${tool.name} ${tool.status}`}
 								>
 									<span class="font-mono text-xs truncate">ran `{tool.name}`</span>
+									{#if tool.durationMs !== undefined}
+										<span class="text-xs text-muted-foreground tabular-nums"
+											>{tool.durationMs}ms</span
+										>
+									{/if}
 									{#if tool.status === 'ok'}
 										<Badge variant="secondary" class="ml-auto text-xs">ok</Badge>
 									{:else if tool.status === 'failed'}
@@ -171,10 +175,14 @@
 								{#if tool.summary}
 									<Collapsible.Content class="mt-1 rounded-md border bg-card p-3 text-sm">
 										<pre class="whitespace-pre-wrap break-words text-xs">{trunc.display}</pre>
-										{#if trunc.truncated}
+										{#if trunc.truncated || tool.truncated}
 											<p class="mt-2 text-xs text-muted-foreground">
-												Output truncated — {tool.summary.length - 800} chars hidden
+												…[truncated to 48KB]{#if trunc.truncated}
+													— {tool.summary.length - 800} chars hidden{/if}
 											</p>
+										{/if}
+										{#if tool.status === 'failed'}
+											<p class="mt-2 text-xs text-destructive">Tool failed — error details above</p>
 										{/if}
 									</Collapsible.Content>
 								{/if}

@@ -451,19 +451,66 @@ class OpenRouterAdapter implements ModelAdapter {
 export class StubAdapter implements ModelAdapter {
 	constructor(private opts?: { fail?: boolean; text?: string }) {}
 	async *stream(
-		_req: { model: string; messages: Msg[]; tools?: ToolDef[]; maxTokens?: number },
+		req: { model: string; messages: Msg[]; tools?: ToolDef[]; maxTokens?: number },
 		signal: AbortSignal
 	): AsyncIterable<{ delta?: string; toolCall?: ToolCall; usage?: Usage }> {
 		if (this.opts?.fail) {
 			throw new Error('stub model failure');
 		}
+		// Test seam for tool loop: if MODEL_STUB_TEXT contains tool call markers, yield them.
+		// Format: MODEL_STUB_TEXT="tool:sepia__search:{\"q\":\"hello\"}|tool:other__tool:{}|final text"
+		// Or use MODEL_STUB_TOOL env var for more control.
+		const toolEnv = (globalThis as unknown as { __STUB_TOOL_CALLS?: string }).__STUB_TOOL_CALLS;
+		// Also check if text looks like tool calls (for test injection via env)
 		const text = this.opts?.text ?? 'stub response';
-		// Yield in small chunks to exercise token streaming
+		// If text starts with "TOOL:", parse as tool calls
+		if (text.startsWith('TOOL:')) {
+			const parts = text.slice(5).split('|TOOL:');
+			for (const part of parts) {
+				if (signal.aborted) break;
+				if (part.startsWith('{')) {
+					try {
+						const parsed = JSON.parse(part) as { name: string; arguments: string; id?: string };
+						yield {
+							toolCall: {
+								id: parsed.id ?? `stub-${Math.random().toString(36).slice(2, 6)}`,
+								name: parsed.name,
+								arguments: parsed.arguments
+							}
+						};
+					} catch {
+						yield { delta: part };
+					}
+				} else if (part.trim().startsWith('{') || part.includes('"name"')) {
+					try {
+						const parsed = JSON.parse(part) as { name: string; arguments: string; id?: string };
+						yield {
+							toolCall: {
+								id: parsed.id ?? `stub-${Math.random().toString(36).slice(2, 6)}`,
+								name: parsed.name,
+								arguments: parsed.arguments
+							}
+						};
+					} catch {
+						yield { delta: part };
+					}
+				} else {
+					yield { delta: part };
+				}
+				if (!signal.aborted) {
+					await new Promise<void>((r) => setTimeout(r, 5));
+				}
+			}
+			if (!signal.aborted) {
+				yield { usage: { promptTokens: 10, completionTokens: text.length, costUsd: 0 } };
+			}
+			return;
+		}
+		// Normal stub: yield text in chunks
 		const chunkSize = 5;
 		for (let i = 0; i < text.length; i += chunkSize) {
 			if (signal.aborted) break;
 			yield { delta: text.slice(i, i + chunkSize) };
-			// Small yield to allow abort/cancel to propagate (5ms so cancel test can interrupt)
 			await new Promise<void>((r) => setTimeout(r, 5));
 		}
 		if (!signal.aborted) {

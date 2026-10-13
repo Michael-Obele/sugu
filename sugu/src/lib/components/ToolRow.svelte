@@ -9,9 +9,11 @@
 		name: string;
 		status: 'running' | 'ok' | 'failed';
 		summary?: string;
+		durationMs?: number;
+		truncated?: boolean;
 	};
 
-	let { name, status, summary }: Props = $props();
+	let { name, status, summary, durationMs, truncated }: Props = $props();
 
 	function truncate(
 		text: string,
@@ -22,19 +24,23 @@
 	}
 
 	let trunc = $derived(summary ? truncate(summary) : null);
+	let isTruncated = $derived(truncated ?? trunc?.truncated ?? false);
 </script>
 
 <Collapsible.Root class="w-full">
 	<Collapsible.Trigger
 		class={cn(
-			'flex min-h-[44px] w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm',
+			'flex min-h-[44px] w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
 			status === 'failed'
 				? 'border-destructive/50 bg-destructive/10 text-destructive'
 				: 'border-border bg-card text-muted-foreground'
 		)}
-		aria-label={`Tool ${name} ${status}`}
+		aria-label={`Tool ${name} ${status}${durationMs !== undefined ? ` ${durationMs}ms` : ''}`}
 	>
 		<span class="font-mono text-xs truncate">ran `{name}`</span>
+		{#if durationMs !== undefined}
+			<span class="text-xs text-muted-foreground tabular-nums">{durationMs}ms</span>
+		{/if}
 		{#if status === 'ok'}
 			<Badge variant="secondary" class="ml-auto text-xs">ok</Badge>
 		{:else if status === 'failed'}
@@ -51,10 +57,15 @@
 	{#if summary && trunc}
 		<Collapsible.Content class="mt-1 rounded-md border bg-card p-3 text-sm">
 			<pre class="whitespace-pre-wrap break-words text-xs">{trunc.display}</pre>
-			{#if trunc.truncated}
+			{#if isTruncated}
 				<p class="mt-2 text-xs text-muted-foreground">
-					Output truncated — {trunc.hidden} chars hidden
+					…[truncated to 48KB] — {trunc.hidden > 0
+						? `${trunc.hidden} chars hidden`
+						: 'output truncated'}
 				</p>
+			{/if}
+			{#if status === 'failed'}
+				<p class="mt-2 text-xs text-destructive">Tool failed — error details above</p>
 			{/if}
 		</Collapsible.Content>
 	{/if}
