@@ -460,7 +460,6 @@ export class StubAdapter implements ModelAdapter {
 		// Test seam for tool loop: if MODEL_STUB_TEXT contains tool call markers, yield them.
 		// Format: MODEL_STUB_TEXT="tool:sepia__search:{\"q\":\"hello\"}|tool:other__tool:{}|final text"
 		// Or use MODEL_STUB_TOOL env var for more control.
-		const toolEnv = (globalThis as unknown as { __STUB_TOOL_CALLS?: string }).__STUB_TOOL_CALLS;
 		// Also check if text looks like tool calls (for test injection via env)
 		const text = this.opts?.text ?? 'stub response';
 		// If text starts with "TOOL:", parse as tool calls
