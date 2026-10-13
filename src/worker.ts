@@ -145,15 +145,58 @@ export default {
 		}
 
 		// Quota — user token required, one row-read
+		// Free-tier caps from plan/research.md R1: 100k req/day, 13k GB-s/day, 100k rows/day, 5GB stored.
+		// Worker cannot observe GB-s or stored bytes, so those are "—".
 		if (url.pathname === '/api/quota' && request.method === 'GET') {
 			const authErr = await requireUserAuth(request, env);
 			if (authErr) return authErr;
 			try {
 				const meta = env.META.getByName('index');
 				const row = await meta.getUsage(new Date().toISOString().slice(0, 10));
-				return json(row ?? { day: new Date().toISOString().slice(0, 10), turns: 0, prompt_t: 0, compl_t: 0, cost_usd: 0, tools: 0 });
+				const base = row ?? { day: new Date().toISOString().slice(0, 10), turns: 0, prompt_t: 0, compl_t: 0, cost_usd: 0, tools: 0 };
+				const REQUEST_CAP = 100_000;
+				const ROWS_CAP = 100_000;
+				const COST_ALARM_USD = 1.0;
+				// requests: turns + tools approximates request count; rows: turns + tools + usage writes
+				// We only have turns/tools/cost from usage; GB-s and stored are not observable -> null
+				const requests = (base.turns ?? 0) + (base.tools ?? 0);
+				// Row writes: estimate as turns*~4 (user+reserve+update+usage) + tools; but we have no row counter.
+				// Use turns as proxy for row writes if no row counter; show — if not confidently known.
+				// For now, expose what we know: requests% and cost alarm; rows_written% is derived from turns if available.
+				const requestsPct = REQUEST_CAP > 0 ? (requests / REQUEST_CAP) * 100 : null;
+				// rowsWritten: we don't have a direct counter; use null -> "—" unless we can derive
+				const _rowsWritten = null as number | null;
+				const rowsPct = null as number | null;
+				void _rowsWritten;
+				const costAlarm = (base.cost_usd ?? 0) > COST_ALARM_USD;
+				return json({
+					...base,
+					caps: {
+						requests: REQUEST_CAP,
+						rowsWritten: ROWS_CAP,
+						gbs: 13_000,
+						storedGb: 5
+					},
+					pct: {
+						requests: requestsPct,
+						rowsWritten: rowsPct,
+						gbs: null,
+						stored: null
+					},
+					costAlarm
+				});
 			} catch {
-				return json({ day: new Date().toISOString().slice(0, 10), turns: 0, prompt_t: 0, compl_t: 0, cost_usd: 0, tools: 0 });
+				return json({
+					day: new Date().toISOString().slice(0, 10),
+					turns: 0,
+					prompt_t: 0,
+					compl_t: 0,
+					cost_usd: 0,
+					tools: 0,
+					caps: { requests: 100_000, rowsWritten: 100_000, gbs: 13_000, storedGb: 5 },
+					pct: { requests: 0, rowsWritten: null, gbs: null, stored: null },
+					costAlarm: false
+				});
 			}
 		}
 

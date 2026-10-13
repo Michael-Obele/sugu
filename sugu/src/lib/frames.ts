@@ -30,10 +30,18 @@ export type ErrEntry = {
 	at: number;
 };
 
+export type TodoEntry = {
+	id: number;
+	text: string;
+	status: 'open' | 'done' | 'dropped';
+	pos: number;
+};
+
 export type FrameState = {
 	messages: DisplayMessage[];
 	tools: ToolEntry[];
 	errs: ErrEntry[];
+	todos: TodoEntry[];
 	busy: boolean;
 	model: string;
 	ignoredCount: number;
@@ -115,7 +123,12 @@ export function applyFrame(state: FrameState, frame: Frame): FrameState {
 			return { ...state, tools: [...state.tools, entry] };
 		}
 		case 'state': {
-			return { ...state, busy: frame.busy, model: frame.model };
+			return {
+				...state,
+				todos: (frame as unknown as { todos: TodoEntry[] }).todos ?? state.todos,
+				busy: frame.busy,
+				model: frame.model
+			};
 		}
 		case 'err': {
 			const entry: ErrEntry = { code: frame.code, message: frame.message, at: Date.now() };
@@ -134,6 +147,7 @@ export function initialFrameState(): FrameState {
 		messages: [],
 		tools: [],
 		errs: [],
+		todos: [],
 		busy: false,
 		model: 'deepseek-chat',
 		ignoredCount: 0

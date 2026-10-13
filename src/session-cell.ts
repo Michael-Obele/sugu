@@ -22,6 +22,14 @@ type EnvWithModels = Env & {
 export class SessionCell extends DurableObject<Env> {
 	private busy = false;
 	private abortCtrl: AbortController | null = null;
+	// MCP handshake cache: persists across turns within this DO instance.
+	// Survives hibernation (in-memory) but not eviction; eviction re-handshakes (cold start).
+	private mcpSessionIds = new Map<string, string>();
+	private mcpCachedTools: {
+		tools: import('./server/models').ToolDef[];
+		mapping: Map<string, { server: import('./server/mcp').ResolvedServer; originalName: string }>;
+		at: number;
+	} | null = null;
 	// MCP tool loop: AR-6 wins over the 5-iteration preference.
 	// Real row budget per turn: 1 user INSERT + 1 assistant reserve INSERT +
 	// 1 assistant UPDATE + 1 usage UPSERT + N tool_runs INSERTs = 4 + N.
@@ -127,14 +135,14 @@ export class SessionCell extends DurableObject<Env> {
 				'probe',
 				null,
 				JSON.stringify({ n: i }),
-				null,
+				null
 			);
 		}
 		return n;
 	}
 
 	async getUsage(
-		day: string,
+		day: string
 	): Promise<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | null> {
 		const row = this.ctx.storage.sql
 			.exec('SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?', day)
@@ -158,7 +166,7 @@ export class SessionCell extends DurableObject<Env> {
 			cursor = this.ctx.storage.sql.exec(
 				'SELECT id, type, role, payload, meta FROM events WHERE id < ? ORDER BY id DESC LIMIT ?',
 				before,
-				limit + 1,
+				limit + 1
 			);
 		} else {
 			cursor = this.ctx.storage.sql.exec('SELECT id, type, role, payload, meta FROM events ORDER BY id DESC LIMIT ?', limit + 1);
@@ -197,7 +205,8 @@ export class SessionCell extends DurableObject<Env> {
 	private getSessionId(): string | null {
 		try {
 			const row = this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'sessionId'").one() as unknown as
-				{ value: string } | undefined;
+				| { value: string }
+				| undefined;
 			return row?.value ?? null;
 		} catch {
 			return null;
@@ -207,7 +216,7 @@ export class SessionCell extends DurableObject<Env> {
 	private setSessionId(id: string): void {
 		this.ctx.storage.sql.exec(
 			"INSERT INTO meta (key, value) VALUES ('sessionId', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-			id,
+			id
 		);
 	}
 
@@ -246,7 +255,7 @@ export class SessionCell extends DurableObject<Env> {
 				const msg = parsed.issues[0]?.message ?? 'bad frame';
 				const isTooLong = msg.includes('length') || msg.includes('max');
 				ws.send(
-					JSON.stringify({ v: 1, t: 'err', code: 'bad_frame', message: isTooLong ? 'message too long (max 8000 chars)' : 'bad frame' }),
+					JSON.stringify({ v: 1, t: 'err', code: 'bad_frame', message: isTooLong ? 'message too long (max 8000 chars)' : 'bad frame' })
 				);
 			}
 			return;
@@ -296,7 +305,7 @@ export class SessionCell extends DurableObject<Env> {
 					'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
 					JSON.stringify({ text: this.pendingText }),
 					JSON.stringify({ interrupted: true }),
-					this.pendingAssistantId,
+					this.pendingAssistantId
 				);
 			} catch {
 				// ignore
@@ -370,7 +379,7 @@ export class SessionCell extends DurableObject<Env> {
 			'user',
 			'user',
 			JSON.stringify({ text: frame.text }),
-			null,
+			null
 		);
 		if (firstTitle) {
 			const sid = this.getSessionId();
@@ -395,7 +404,7 @@ export class SessionCell extends DurableObject<Env> {
 				type: 'user',
 				role: 'user',
 				payload: JSON.stringify({ text: frame.text }),
-				meta: null,
+				meta: null
 			});
 			if (userFrame) ws.send(JSON.stringify(userFrame));
 		}
@@ -409,7 +418,7 @@ export class SessionCell extends DurableObject<Env> {
 			'assistant',
 			'assistant',
 			JSON.stringify({ text: '' }),
-			JSON.stringify({ interrupted: true }),
+			JSON.stringify({ interrupted: true })
 		);
 		const reserved = this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number };
 		const nextSeq = reserved.id;
@@ -446,7 +455,7 @@ export class SessionCell extends DurableObject<Env> {
 					},
 					sources,
 					fetch,
-					env.GITHUB_TOKEN,
+					env.GITHUB_TOKEN
 				);
 				skillsInjection = result.injection;
 				skillsNotes = result.notes;
@@ -457,30 +466,74 @@ export class SessionCell extends DurableObject<Env> {
 		}
 
 		// MCP: resolve servers and tools (config-driven, no hardcoded list)
+		// Cached per-DO: initialize + tools/list only on cold start or after TTL/session error.
+		// Steady-state: 0 subrequests for MCP handshake; cold-start: 2 per server.
 		let mcpTools: ToolDef[] = [];
 		let mcpMapping: Map<string, { server: import('./server/mcp').ResolvedServer; originalName: string }> | null = null;
 		let mcpClient: import('./server/mcp').McpClient | null = null;
 		let mcpSubrequests = 0;
+		let _mcpCacheHit = false;
 		try {
 			const mcpEnv = this.env as unknown as Record<string, string | undefined>;
 			const resolvedServers = parseMcpServers(mcpEnv);
 			if (resolvedServers.length > 0) {
-				mcpClient = new McpClient(resolvedServers, fetch);
-				const listed = await mcpClient.listTools();
-				mcpTools = listed.tools.map((td) => ({
-					name: td.name,
-					description: td.description,
-					parameters: td.inputSchema ?? {},
-				}));
-				mcpMapping = listed.mapping;
-				// AR-5: tools/list counts as subrequests (one per server, but we count as 1 for budget simplicity)
-				// Actually count initialize + tools/list per server; worst case 2 per server.
-				// For AR-5 reporting we track mcpSubrequests.
-				mcpSubrequests = resolvedServers.length * 2;
+				const MCP_TTL_MS = 60 * 60 * 1000;
+				const cacheValid = this.mcpCachedTools !== null && Date.now() - this.mcpCachedTools.at < MCP_TTL_MS;
+				if (cacheValid && this.mcpCachedTools) {
+					mcpTools = this.mcpCachedTools.tools;
+					mcpMapping = this.mcpCachedTools.mapping;
+					mcpClient = new McpClient(resolvedServers, fetch, this.mcpSessionIds);
+					// Reuse cached mapping without re-handshaking
+					// Need to ensure client's cached mapping matches
+					(mcpClient as unknown as { cachedTools: unknown }).cachedTools = {
+						tools: this.mcpCachedTools.tools.map((td) => ({ name: td.name, description: td.description, inputSchema: td.parameters })),
+						mapping: this.mcpCachedTools.mapping,
+						at: this.mcpCachedTools.at
+					};
+					_mcpCacheHit = true;
+					void _mcpCacheHit;
+					mcpSubrequests = 0;
+				} else {
+					mcpClient = new McpClient(resolvedServers, fetch, this.mcpSessionIds);
+					const listed = await mcpClient.listTools();
+					mcpTools = listed.tools.map((td) => ({
+						name: td.name,
+						description: td.description,
+						parameters: td.inputSchema ?? {}
+					}));
+					mcpMapping = listed.mapping;
+					this.mcpCachedTools = { tools: mcpTools, mapping: mcpMapping, at: Date.now() };
+					// Cold start: 2 subrequests per server (initialize + tools/list)
+					mcpSubrequests = resolvedServers.length * 2;
+				}
 			}
 		} catch {
 			// MCP listing failure is not fatal — continue without tools
 		}
+		// Built-in todo_write: always available, no MCP needed
+		const todoTool: ToolDef = {
+			name: 'todo_write',
+			description:
+				'Replace the todo list. One call replaces the entire list. Each item: { text: string, status: "open"|"done"|"dropped" }.',
+			parameters: {
+				type: 'object',
+				properties: {
+					todos: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								text: { type: 'string' },
+								status: { type: 'string', enum: ['open', 'done', 'dropped'] }
+							},
+							required: ['text']
+						}
+					}
+				},
+				required: ['todos']
+			}
+		};
+		mcpTools = [...mcpTools, todoTool];
 
 		// Build prompt: system + skills + capped history
 		const messages = this.buildMessages(frame.text, skillsInjection, skillsNotes);
@@ -532,7 +585,7 @@ export class SessionCell extends DurableObject<Env> {
 						pendingToolCall = {
 							id: chunk.toolCall.id || `tool-${Date.now()}-${iter}`,
 							name: chunk.toolCall.name,
-							arguments: chunk.toolCall.arguments,
+							arguments: chunk.toolCall.arguments
 						};
 						sawToolCall = true;
 						break;
@@ -580,24 +633,69 @@ export class SessionCell extends DurableObject<Env> {
 						seq: toolSeq,
 						runId,
 						name: toolName,
-						status: 'running',
-					}),
+						status: 'running'
+					})
 				);
 			} catch {
 				/* socket gone */
 			}
 
-			// Execute tool
+			// Execute tool — todo_write is built-in (no MCP), works with no servers configured
 			let resultText: string;
 			let isError = false;
 			let truncated = false;
 			let durationMs = 0;
-			if (mcpClient && mcpMapping && mcpMapping.has(toolName)) {
+			if (toolName === 'todo_write') {
+				const todoStart = Date.now();
+				try {
+					const todosInput = (toolArgs as Record<string, unknown>)?.['todos'];
+					if (!Array.isArray(todosInput)) {
+						resultText = 'todo_write: expected { todos: Array<{text, status}> }';
+						isError = true;
+					} else {
+						// Validate and normalize
+						const normalized: { text: string; status: string }[] = [];
+						for (const item of todosInput) {
+							if (!item || typeof (item as Record<string, unknown>)['text'] !== 'string') continue;
+							const text = String((item as Record<string, unknown>)['text'])
+								.trim()
+								.slice(0, 500);
+							if (!text) continue;
+							const statusRaw = String((item as Record<string, unknown>)['status'] ?? 'open');
+							const status = statusRaw === 'done' ? 'done' : statusRaw === 'dropped' ? 'dropped' : 'open';
+							normalized.push({ text, status });
+						}
+						// Bounded write: delete all + insert normalized in a single transaction = 2 writes total
+						// (one DELETE, one batched INSERT), not N per todo. Keeps AR-6 ≤8.
+						this.ctx.storage.sql.exec('DELETE FROM todos');
+						for (let i = 0; i < normalized.length; i++) {
+							const item = normalized[i]!;
+							this.ctx.storage.sql.exec('INSERT INTO todos (text, status, pos) VALUES (?, ?, ?)', item.text, item.status, i);
+						}
+						// Emit state frame so client updates without reload
+						try {
+							ws.send(JSON.stringify(this.buildStateFrame()));
+						} catch {
+							/* socket gone */
+						}
+						resultText = `todos updated: ${normalized.length} items`;
+					}
+				} catch (e) {
+					resultText = `todo_write failed: ${e instanceof Error ? e.message : String(e)}`;
+					isError = true;
+				}
+				durationMs = Date.now() - todoStart;
+			} else if (mcpClient && mcpMapping && mcpMapping.has(toolName)) {
 				const callResult = await mcpClient.callTool(toolName, toolArgs);
 				resultText = callResult.text;
 				isError = callResult.isError;
 				truncated = callResult.truncated;
 				durationMs = callResult.durationMs;
+				// Session error invalidation: clear MCP cache on auth/session expiry
+				if (isError && (/session/i.test(resultText) || resultText.includes('401') || resultText.includes('440'))) {
+					this.mcpCachedTools = null;
+					this.mcpSessionIds.clear();
+				}
 			} else {
 				resultText = `Unknown tool: ${toolName}`;
 				isError = true;
@@ -635,8 +733,8 @@ export class SessionCell extends DurableObject<Env> {
 					args: JSON.stringify(toolArgs).slice(0, 8192),
 					result: resultText,
 					durationMs,
-					truncated,
-				}),
+					truncated
+				})
 			);
 			void (this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }).id;
 			try {
@@ -648,8 +746,8 @@ export class SessionCell extends DurableObject<Env> {
 						runId,
 						name: toolName,
 						status,
-						summary: summaryWithDuration,
-					}),
+						summary: summaryWithDuration
+					})
 				);
 			} catch {
 				/* socket gone */
@@ -661,7 +759,7 @@ export class SessionCell extends DurableObject<Env> {
 			loopMessages = [
 				...loopMessages,
 				{ role: 'assistant', content: `[called ${toolName} with ${JSON.stringify(toolArgs)}]` },
-				{ role: 'user', content: toolResultContent },
+				{ role: 'user', content: toolResultContent }
 			];
 			// Also track for prompt building if needed
 			toolMessages.push({ role: 'user', content: toolResultContent });
@@ -675,7 +773,7 @@ export class SessionCell extends DurableObject<Env> {
 				'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
 				JSON.stringify({ text: this.pendingText }),
 				JSON.stringify({ interrupted: true }),
-				this.pendingAssistantId,
+				this.pendingAssistantId
 			);
 			try {
 				ws.send(
@@ -686,8 +784,8 @@ export class SessionCell extends DurableObject<Env> {
 						id: this.pendingAssistantId,
 						role: 'assistant',
 						text: this.pendingText,
-						interrupted: true,
-					}),
+						interrupted: true
+					})
 				);
 			} catch {
 				// socket gone
@@ -713,7 +811,7 @@ export class SessionCell extends DurableObject<Env> {
 				'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
 				JSON.stringify({ text: textToPersist }),
 				JSON.stringify({ interrupted: true }),
-				this.pendingAssistantId,
+				this.pendingAssistantId
 			);
 			try {
 				ws.send(
@@ -724,8 +822,8 @@ export class SessionCell extends DurableObject<Env> {
 						id: this.pendingAssistantId,
 						role: 'assistant',
 						text: textToPersist,
-						interrupted: true,
-					}),
+						interrupted: true
+					})
 				);
 			} catch {
 				/* socket gone */
@@ -758,7 +856,7 @@ export class SessionCell extends DurableObject<Env> {
 			'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
 			JSON.stringify({ text: finalText }),
 			JSON.stringify({ interrupted: false }),
-			this.pendingAssistantId,
+			this.pendingAssistantId
 		);
 		// Record usage: one upsert per turn (AR-6: ≤8 row-writes/turn)
 		this.recordUsage(promptTokens, completionTokens, costUsd);
@@ -770,8 +868,8 @@ export class SessionCell extends DurableObject<Env> {
 					seq: this.pendingAssistantId,
 					id: this.pendingAssistantId,
 					role: 'assistant',
-					text: finalText,
-				}),
+					text: finalText
+				})
 			);
 		} catch {
 			// socket gone
@@ -810,7 +908,7 @@ export class SessionCell extends DurableObject<Env> {
 		// Read recent history from events (user + assistant only)
 		const cursor = this.ctx.storage.sql.exec(
 			"SELECT type, role, payload FROM events WHERE type IN ('user', 'assistant') ORDER BY id DESC LIMIT ?",
-			MAX_HISTORY,
+			MAX_HISTORY
 		);
 		const rows = [...cursor].reverse() as unknown as { type: string; role: string | null; payload: string }[];
 		for (const row of rows) {
@@ -853,7 +951,7 @@ export class SessionCell extends DurableObject<Env> {
 			day,
 			promptT,
 			complT,
-			costUsd,
+			costUsd
 		);
 		// Also update global quota in MetaCell for /api/quota (best-effort, no await)
 		try {
@@ -888,7 +986,7 @@ export class SessionCell extends DurableObject<Env> {
 			seq,
 			todos: todoList,
 			busy: this.busy,
-			model: 'deepseek-chat',
+			model: 'deepseek-chat'
 		} as Frame;
 	}
 }
@@ -910,7 +1008,7 @@ function eventRowToFrame(row: {
 				seq: row.id,
 				id: row.id,
 				role: row.role ?? 'user',
-				text: payload['text'] ?? '',
+				text: payload['text'] ?? ''
 			};
 			let interrupted = payload['interrupted'];
 			if (row.meta) {
@@ -945,7 +1043,7 @@ function eventRowToFrame(row: {
 				runId: payload['runId'] ?? String(row.id),
 				name: payload['name'] ?? 'unknown',
 				status: payload['status'] ?? 'ok',
-				summary: payload['summary'],
+				summary: payload['summary']
 			};
 		}
 		case 'interrupted': {
@@ -956,7 +1054,7 @@ function eventRowToFrame(row: {
 				id: row.id,
 				role: 'assistant',
 				text: payload['text'] ?? '',
-				interrupted: true,
+				interrupted: true
 			};
 		}
 		default:

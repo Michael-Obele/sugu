@@ -36,8 +36,25 @@
 		prompt_t: number;
 		compl_t: number;
 		cost_usd: number;
+		caps?: { requests: number; rowsWritten: number; gbs: number; storedGb: number };
+		pct?: {
+			requests: number | null;
+			rowsWritten: number | null;
+			gbs: number | null;
+			stored: number | null;
+		};
+		costAlarm?: boolean;
 	} | null = $state(null);
 	let quotaError: string | null = $state(null);
+
+	function fmtPct(v: number | null | undefined): string {
+		if (v === null || v === undefined) return '—';
+		return `${v.toFixed(2)}%`;
+	}
+	function fmtNum(v: number | null | undefined): string {
+		if (v === null || v === undefined) return '—';
+		return String(v);
+	}
 
 	let exportAllLoading = $state(false);
 
@@ -201,13 +218,52 @@
 		{/if}
 
 		{#if quota}
-			<div class="rounded-xl border p-4">
+			<div class="rounded-xl border p-4 space-y-2">
 				<p class="text-sm font-medium">Quota — {quota.day}</p>
 				<p class="text-sm text-muted-foreground">
 					Turns: {quota.turns} · Prompt: {quota.prompt_t} · Completion: {quota.compl_t} · Cost: ${quota.cost_usd.toFixed(
 						4
 					)}
 				</p>
+				<div class="grid grid-cols-2 gap-2 text-xs">
+					<div class="rounded-md border bg-card px-3 py-2">
+						<p class="text-muted-foreground">Requests</p>
+						<p class="font-medium">
+							{fmtNum(quota.turns)} / {quota.caps ? fmtNum(quota.caps.requests) : '—'} · {quota.pct
+								? fmtPct(quota.pct.requests)
+								: '—'}
+						</p>
+					</div>
+					<div class="rounded-md border bg-card px-3 py-2">
+						<p class="text-muted-foreground">Rows written</p>
+						<p class="font-medium">
+							{fmtPct(quota.pct?.rowsWritten)}
+							{quota.caps ? `· cap ${quota.caps.rowsWritten.toLocaleString()}` : ''}
+						</p>
+					</div>
+					<div class="rounded-md border bg-card px-3 py-2">
+						<p class="text-muted-foreground">GB-s</p>
+						<p class="font-medium">
+							{fmtPct(quota.pct?.gbs)}
+							{quota.caps ? `· cap ${quota.caps.gbs.toLocaleString()}` : ''}
+						</p>
+					</div>
+					<div class="rounded-md border bg-card px-3 py-2">
+						<p class="text-muted-foreground">Stored</p>
+						<p class="font-medium">
+							{fmtPct(quota.pct?.stored)}
+							{quota.caps ? `· cap ${quota.caps.storedGb} GB` : ''}
+						</p>
+					</div>
+				</div>
+				{#if quota.costAlarm}
+					<div
+						role="alert"
+						class="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+					>
+						Cost alarm: ${quota.cost_usd.toFixed(4)} today exceeds $1.00
+					</div>
+				{/if}
 			</div>
 		{:else if quotaError}
 			<div class="rounded-xl border border-dashed p-4">

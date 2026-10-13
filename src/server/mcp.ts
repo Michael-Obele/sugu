@@ -15,11 +15,11 @@ export const TRUNCATION_MARKER = '\n…[truncated to 48KB]';
 const McpToolSchema = v.strictObject({
 	name: v.string(),
 	description: v.optional(v.string()),
-	inputSchema: v.optional(v.unknown()),
+	inputSchema: v.optional(v.unknown())
 });
 
 const ToolsListResultSchema = v.strictObject({
-	tools: v.array(McpToolSchema),
+	tools: v.array(McpToolSchema)
 });
 
 export type McpServerConfig = { name: string; url: string; tokenEnv?: string };
@@ -77,13 +77,13 @@ async function doJsonRpc(
 	params: unknown,
 	fetchImpl: typeof fetch,
 	sessionIds: Map<string, string>,
-	timeoutMs = MCP_TIMEOUT_MS,
+	timeoutMs = MCP_TIMEOUT_MS
 ): Promise<unknown> {
 	const id = Math.floor(Math.random() * 1_000_000);
 	const body = { jsonrpc: '2.0' as const, id, method, params };
 	const headers: Record<string, string> = {
 		'content-type': 'application/json',
-		accept: 'application/json, text/event-stream',
+		accept: 'application/json, text/event-stream'
 	};
 	if (server.token) headers['authorization'] = `Bearer ${server.token}`;
 	const sid = sessionIds.get(server.name);
@@ -96,7 +96,7 @@ async function doJsonRpc(
 			method: 'POST',
 			headers,
 			body: JSON.stringify(body),
-			signal: controller.signal,
+			signal: controller.signal
 		});
 
 		const newSid =
@@ -163,6 +163,8 @@ async function doJsonRpc(
 
 export type McpToolDef = { name: string; description?: string; inputSchema?: unknown };
 
+export const MCP_CACHE_TTL_MS = 60 * 60 * 1000;
+
 export class McpClient {
 	private servers: ResolvedServer[];
 	private fetchImpl: typeof fetch;
@@ -185,6 +187,16 @@ export class McpClient {
 		return this.sessionIds.get(serverName);
 	}
 
+	invalidateCache(): void {
+		this.cachedTools = null;
+		this.cacheTurn = -1;
+	}
+
+	isCacheValid(): boolean {
+		if (!this.cachedTools) return false;
+		return Date.now() - this.cachedTools.at < MCP_CACHE_TTL_MS;
+	}
+
 	async initialize(server: ResolvedServer): Promise<void> {
 		try {
 			await doJsonRpc(
@@ -193,10 +205,10 @@ export class McpClient {
 				{
 					protocolVersion: '2024-11-05',
 					capabilities: {},
-					clientInfo: { name: 'sugu', version: '0.0.0' },
+					clientInfo: { name: 'sugu', version: '0.0.0' }
 				},
 				this.fetchImpl,
-				this.sessionIds,
+				this.sessionIds
 			);
 		} catch {
 			// Initialize failure is not fatal — continue without session id
@@ -207,7 +219,7 @@ export class McpClient {
 		tools: McpToolDef[];
 		mapping: Map<string, { server: ResolvedServer; originalName: string }>;
 	}> {
-		if (this.cachedTools && this.cacheTurn === this.turnCounter) {
+		if (this.cachedTools && this.isCacheValid()) {
 			return { tools: this.cachedTools.tools, mapping: this.cachedTools.mapping };
 		}
 
@@ -230,7 +242,7 @@ export class McpClient {
 					const def: McpToolDef = {
 						name: namespaced,
 						description: tool.description,
-						inputSchema: tool.inputSchema,
+						inputSchema: tool.inputSchema
 					};
 					allTools.push(def);
 					mapping.set(namespaced, { server, originalName: tool.name });
@@ -247,11 +259,13 @@ export class McpClient {
 
 	nextTurn(): void {
 		this.turnCounter++;
+		// Cache persists across turns; do not invalidate here.
+		// Invalidation is via TTL or session error in callTool.
 	}
 
 	async callTool(
 		namespacedName: string,
-		args: unknown,
+		args: unknown
 	): Promise<{ text: string; truncated: boolean; isError: boolean; durationMs: number }> {
 		const entry = this.cachedTools?.mapping.get(namespacedName);
 		let server: ResolvedServer | undefined;
@@ -282,7 +296,7 @@ export class McpClient {
 				'tools/call',
 				{ name: originalName, arguments: args },
 				this.fetchImpl,
-				this.sessionIds,
+				this.sessionIds
 			)) as unknown as { content?: Array<{ type: string; text?: string }>; isError?: boolean } | { content?: string } | unknown;
 
 			let text: string;
@@ -309,6 +323,11 @@ export class McpClient {
 		} catch (e) {
 			const durationMs = Date.now() - start;
 			const msg = e instanceof Error ? e.message : String(e);
+			// Session invalidation: if the error looks like a session expiry, clear cache and session id
+			if (/session/i.test(msg) || msg.includes('401') || msg.includes('440')) {
+				this.sessionIds.delete(server!.name);
+				this.invalidateCache();
+			}
 			const truncated = truncateResult(msg);
 			return { text: truncated.text, truncated: truncated.truncated, isError: true, durationMs };
 		}

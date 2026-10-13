@@ -28,6 +28,7 @@ export class SessionStore {
 	messages = $derived(this.frameState.messages);
 	tools = $derived(this.frameState.tools);
 	errs = $derived(this.frameState.errs);
+	todos = $derived(this.frameState.todos);
 
 	constructor() {
 		if (typeof localStorage !== 'undefined') {
@@ -105,8 +106,35 @@ export class SessionStore {
 		this.connection = 'closed';
 	}
 
+	parseTodoCommand(text: string): { isTodo: boolean; todoText: string | null } {
+		const m = text.match(/^\/todo\s+(.+)/);
+		if (!m) return { isTodo: false, todoText: null };
+		const todoText = m[1]!.trim();
+		if (!todoText) return { isTodo: false, todoText: null };
+		return { isTodo: true, todoText };
+	}
+
+	addLocalTodo(text: string): void {
+		const parsed = this.parseTodoCommand(text);
+		if (!parsed.isTodo || !parsed.todoText) return;
+		const nextPos = this.frameState.todos.length;
+		const newTodo = {
+			id: Date.now(),
+			text: parsed.todoText,
+			status: 'open' as const,
+			pos: nextPos
+		};
+		this.frameState = { ...this.frameState, todos: [...this.frameState.todos, newTodo] };
+	}
+
 	send(text: string, skills?: string[]): void {
 		if (!text.trim()) return;
+		// Local /todo affordance — not a model turn
+		const parsed = this.parseTodoCommand(text);
+		if (parsed.isTodo && parsed.todoText) {
+			this.addLocalTodo(text);
+			return;
+		}
 		if (this.connection !== 'open') {
 			this.error = 'You are offline — message kept in composer';
 			return;

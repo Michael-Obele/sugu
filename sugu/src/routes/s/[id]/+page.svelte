@@ -21,6 +21,7 @@
 	import ConnectionBanner from '$lib/components/ConnectionBanner.svelte';
 	import MessageList from '$lib/components/MessageList.svelte';
 	import Composer from '$lib/components/Composer.svelte';
+	import TodoPanel from '$lib/components/TodoPanel.svelte';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
@@ -183,6 +184,13 @@
 	});
 
 	function handleSend(text: string, skills?: string[]): void {
+		// Local /todo affordance — handle before any network
+		const todoParsed = sessionStore.parseTodoCommand(text);
+		if (todoParsed.isTodo && todoParsed.todoText) {
+			sessionStore.addLocalTodo(text);
+			composerText = '';
+			return;
+		}
 		const toSend = skills ?? selectedSkills;
 		if (sessionStore.connection !== 'open') {
 			pendingSend = text;
@@ -370,6 +378,8 @@
 			</Badge>
 		{/if}
 	</div>
+
+	<TodoPanel todos={sessionStore.todos} />
 
 	<MessageList
 		messages={sessionStore.messages}
