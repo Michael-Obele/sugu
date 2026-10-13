@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { McpClient, parseMcpServers, truncateResult, MCP_TIMEOUT_MS, MAX_TOOL_RESULT_BYTES, TRUNCATION_MARKER } from '../src/server/mcp';
+import { McpClient, parseMcpServers, truncateResult, MAX_TOOL_RESULT_BYTES, TRUNCATION_MARKER } from '../src/server/mcp';
 
 // Helpers
 function jsonResponse(body: unknown, headers: Record<string, string> = {}): Response {

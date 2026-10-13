@@ -617,19 +617,31 @@ export class SessionCell extends DurableObject<Env> {
 
 			const durationStr = `${durationMs}ms`;
 			const summaryWithDuration = `${summary}${truncated ? ' …[truncated to 48KB]' : ''} (${durationStr})`;
-			// AR-6: 1 row per tool — single INSERT into tool_runs (final, no running→update split).
-			// That's 1 row per tool, so 4 tools = 4+N=8 total (see class comment).
+			// Persist the tool frame as an `events` row of type 'tool'. That is the shape
+			// eventRowToFrame() already maps, and it is what makes replay work: writing only to
+			// `tool_runs` meant a reload/reconnect silently lost every tool row, so live and
+			// replay disagreed about the same turn. One row per tool keeps a turn at
+			// user(1) + reserve(1) + update(1) + tools(N) + usage(1) = 4 + N, i.e. exactly 8 at
+			// the 4-tool cap (AR-6). The frame's `seq` must be the ASSISTANT message's seq
+			// because the client attaches a tool to a message with toolsForSeq(msg.seq) — so
+			// we store that in meta and read it back on replay.
 			this.ctx.storage.sql.exec(
-				'INSERT INTO tool_runs (id, name, args, status, result, ts_start, ts_end) VALUES (?, ?, ?, ?, ?, ?, ?)',
-				runId,
-				toolName,
-				JSON.stringify(toolArgs).slice(0, 8192),
-				status,
-				resultText,
+				'INSERT INTO events (ts, type, role, payload, meta) VALUES (?, ?, ?, ?, ?)',
 				nowIso(),
-				nowIso()
+				'tool',
+				null,
+				JSON.stringify({ runId, name: toolName, status, summary: summaryWithDuration }),
+				JSON.stringify({
+					assistantSeq: this.pendingAssistantId,
+					args: JSON.stringify(toolArgs).slice(0, 8192),
+					result: resultText,
+					durationMs,
+					truncated
+				})
 			);
-			const toolFrameSeq = this.nextSeq();
+			const toolFrameSeq = (
+				this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }
+			).id;
 			try {
 				ws.send(
 					JSON.stringify({
@@ -917,10 +929,22 @@ function eventRowToFrame(row: {
 			return msg;
 		}
 		case 'tool': {
+			// A tool frame's `seq` is the ASSISTANT message's seq, not this row's own id: the
+			// client attaches a tool to a message via toolsForSeq(msg.seq). Stored in meta at
+			// write time so the live frame and the replayed frame carry the same seq.
+			let assistantSeq = row.id;
+			if (row.meta) {
+				try {
+					const meta = JSON.parse(row.meta) as Record<string, unknown>;
+					if (typeof meta['assistantSeq'] === 'number') assistantSeq = meta['assistantSeq'];
+				} catch {
+					// ignore malformed meta
+				}
+			}
 			return {
 				v: 1,
 				t: 'tool',
-				seq: row.id,
+				seq: assistantSeq,
 				runId: payload['runId'] ?? String(row.id),
 				name: payload['name'] ?? 'unknown',
 				status: payload['status'] ?? 'ok',

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, test, expect } from 'bun:test';
 import { McpClient, truncateResult, MAX_TOOL_RESULT_BYTES } from '../src/server/mcp';
 
 // Integration tests for tool loop — these test the session-cell tool loop via the stub adapter

@@ -152,7 +152,7 @@ async function doJsonRpc(
 		}
 		return rpc.result;
 	} catch (e) {
-		if ((e as Error).name === 'AbortError' || (e as DOMException).name === 'AbortError') {
+		if ((e as Error).name === 'AbortError') {
 			throw new Error(`MCP timeout after ${timeoutMs}ms`);
 		}
 		throw e;
