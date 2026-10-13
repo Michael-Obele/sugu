@@ -127,14 +127,14 @@ export class SessionCell extends DurableObject<Env> {
 				'probe',
 				null,
 				JSON.stringify({ n: i }),
-				null
+				null,
 			);
 		}
 		return n;
 	}
 
 	async getUsage(
-		day: string
+		day: string,
 	): Promise<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | null> {
 		const row = this.ctx.storage.sql
 			.exec('SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?', day)
@@ -158,7 +158,7 @@ export class SessionCell extends DurableObject<Env> {
 			cursor = this.ctx.storage.sql.exec(
 				'SELECT id, type, role, payload, meta FROM events WHERE id < ? ORDER BY id DESC LIMIT ?',
 				before,
-				limit + 1
+				limit + 1,
 			);
 		} else {
 			cursor = this.ctx.storage.sql.exec('SELECT id, type, role, payload, meta FROM events ORDER BY id DESC LIMIT ?', limit + 1);
@@ -197,8 +197,7 @@ export class SessionCell extends DurableObject<Env> {
 	private getSessionId(): string | null {
 		try {
 			const row = this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'sessionId'").one() as unknown as
-				| { value: string }
-				| undefined;
+				{ value: string } | undefined;
 			return row?.value ?? null;
 		} catch {
 			return null;
@@ -208,7 +207,7 @@ export class SessionCell extends DurableObject<Env> {
 	private setSessionId(id: string): void {
 		this.ctx.storage.sql.exec(
 			"INSERT INTO meta (key, value) VALUES ('sessionId', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-			id
+			id,
 		);
 	}
 
@@ -247,7 +246,7 @@ export class SessionCell extends DurableObject<Env> {
 				const msg = parsed.issues[0]?.message ?? 'bad frame';
 				const isTooLong = msg.includes('length') || msg.includes('max');
 				ws.send(
-					JSON.stringify({ v: 1, t: 'err', code: 'bad_frame', message: isTooLong ? 'message too long (max 8000 chars)' : 'bad frame' })
+					JSON.stringify({ v: 1, t: 'err', code: 'bad_frame', message: isTooLong ? 'message too long (max 8000 chars)' : 'bad frame' }),
 				);
 			}
 			return;
@@ -297,7 +296,7 @@ export class SessionCell extends DurableObject<Env> {
 					'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
 					JSON.stringify({ text: this.pendingText }),
 					JSON.stringify({ interrupted: true }),
-					this.pendingAssistantId
+					this.pendingAssistantId,
 				);
 			} catch {
 				// ignore
@@ -371,7 +370,7 @@ export class SessionCell extends DurableObject<Env> {
 			'user',
 			'user',
 			JSON.stringify({ text: frame.text }),
-			null
+			null,
 		);
 		if (firstTitle) {
 			const sid = this.getSessionId();
@@ -396,7 +395,7 @@ export class SessionCell extends DurableObject<Env> {
 				type: 'user',
 				role: 'user',
 				payload: JSON.stringify({ text: frame.text }),
-				meta: null
+				meta: null,
 			});
 			if (userFrame) ws.send(JSON.stringify(userFrame));
 		}
@@ -410,7 +409,7 @@ export class SessionCell extends DurableObject<Env> {
 			'assistant',
 			'assistant',
 			JSON.stringify({ text: '' }),
-			JSON.stringify({ interrupted: true })
+			JSON.stringify({ interrupted: true }),
 		);
 		const reserved = this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number };
 		const nextSeq = reserved.id;
@@ -447,7 +446,7 @@ export class SessionCell extends DurableObject<Env> {
 					},
 					sources,
 					fetch,
-					env.GITHUB_TOKEN
+					env.GITHUB_TOKEN,
 				);
 				skillsInjection = result.injection;
 				skillsNotes = result.notes;
@@ -471,7 +470,7 @@ export class SessionCell extends DurableObject<Env> {
 				mcpTools = listed.tools.map((td) => ({
 					name: td.name,
 					description: td.description,
-					parameters: td.inputSchema ?? {}
+					parameters: td.inputSchema ?? {},
 				}));
 				mcpMapping = listed.mapping;
 				// AR-5: tools/list counts as subrequests (one per server, but we count as 1 for budget simplicity)
@@ -533,7 +532,7 @@ export class SessionCell extends DurableObject<Env> {
 						pendingToolCall = {
 							id: chunk.toolCall.id || `tool-${Date.now()}-${iter}`,
 							name: chunk.toolCall.name,
-							arguments: chunk.toolCall.arguments
+							arguments: chunk.toolCall.arguments,
 						};
 						sawToolCall = true;
 						break;
@@ -581,8 +580,8 @@ export class SessionCell extends DurableObject<Env> {
 						seq: toolSeq,
 						runId,
 						name: toolName,
-						status: 'running'
-					})
+						status: 'running',
+					}),
 				);
 			} catch {
 				/* socket gone */
@@ -636,8 +635,8 @@ export class SessionCell extends DurableObject<Env> {
 					args: JSON.stringify(toolArgs).slice(0, 8192),
 					result: resultText,
 					durationMs,
-					truncated
-				})
+					truncated,
+				}),
 			);
 			void (this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }).id;
 			try {
@@ -649,8 +648,8 @@ export class SessionCell extends DurableObject<Env> {
 						runId,
 						name: toolName,
 						status,
-						summary: summaryWithDuration
-					})
+						summary: summaryWithDuration,
+					}),
 				);
 			} catch {
 				/* socket gone */
@@ -662,7 +661,7 @@ export class SessionCell extends DurableObject<Env> {
 			loopMessages = [
 				...loopMessages,
 				{ role: 'assistant', content: `[called ${toolName} with ${JSON.stringify(toolArgs)}]` },
-				{ role: 'user', content: toolResultContent }
+				{ role: 'user', content: toolResultContent },
 			];
 			// Also track for prompt building if needed
 			toolMessages.push({ role: 'user', content: toolResultContent });
@@ -676,7 +675,7 @@ export class SessionCell extends DurableObject<Env> {
 				'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
 				JSON.stringify({ text: this.pendingText }),
 				JSON.stringify({ interrupted: true }),
-				this.pendingAssistantId
+				this.pendingAssistantId,
 			);
 			try {
 				ws.send(
@@ -687,8 +686,8 @@ export class SessionCell extends DurableObject<Env> {
 						id: this.pendingAssistantId,
 						role: 'assistant',
 						text: this.pendingText,
-						interrupted: true
-					})
+						interrupted: true,
+					}),
 				);
 			} catch {
 				// socket gone
@@ -714,7 +713,7 @@ export class SessionCell extends DurableObject<Env> {
 				'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
 				JSON.stringify({ text: textToPersist }),
 				JSON.stringify({ interrupted: true }),
-				this.pendingAssistantId
+				this.pendingAssistantId,
 			);
 			try {
 				ws.send(
@@ -725,8 +724,8 @@ export class SessionCell extends DurableObject<Env> {
 						id: this.pendingAssistantId,
 						role: 'assistant',
 						text: textToPersist,
-						interrupted: true
-					})
+						interrupted: true,
+					}),
 				);
 			} catch {
 				/* socket gone */
@@ -759,7 +758,7 @@ export class SessionCell extends DurableObject<Env> {
 			'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
 			JSON.stringify({ text: finalText }),
 			JSON.stringify({ interrupted: false }),
-			this.pendingAssistantId
+			this.pendingAssistantId,
 		);
 		// Record usage: one upsert per turn (AR-6: ≤8 row-writes/turn)
 		this.recordUsage(promptTokens, completionTokens, costUsd);
@@ -771,8 +770,8 @@ export class SessionCell extends DurableObject<Env> {
 					seq: this.pendingAssistantId,
 					id: this.pendingAssistantId,
 					role: 'assistant',
-					text: finalText
-				})
+					text: finalText,
+				}),
 			);
 		} catch {
 			// socket gone
@@ -811,7 +810,7 @@ export class SessionCell extends DurableObject<Env> {
 		// Read recent history from events (user + assistant only)
 		const cursor = this.ctx.storage.sql.exec(
 			"SELECT type, role, payload FROM events WHERE type IN ('user', 'assistant') ORDER BY id DESC LIMIT ?",
-			MAX_HISTORY
+			MAX_HISTORY,
 		);
 		const rows = [...cursor].reverse() as unknown as { type: string; role: string | null; payload: string }[];
 		for (const row of rows) {
@@ -854,7 +853,7 @@ export class SessionCell extends DurableObject<Env> {
 			day,
 			promptT,
 			complT,
-			costUsd
+			costUsd,
 		);
 		// Also update global quota in MetaCell for /api/quota (best-effort, no await)
 		try {
@@ -889,7 +888,7 @@ export class SessionCell extends DurableObject<Env> {
 			seq,
 			todos: todoList,
 			busy: this.busy,
-			model: 'deepseek-chat'
+			model: 'deepseek-chat',
 		} as Frame;
 	}
 }
@@ -911,7 +910,7 @@ function eventRowToFrame(row: {
 				seq: row.id,
 				id: row.id,
 				role: row.role ?? 'user',
-				text: payload['text'] ?? ''
+				text: payload['text'] ?? '',
 			};
 			let interrupted = payload['interrupted'];
 			if (row.meta) {
@@ -946,7 +945,7 @@ function eventRowToFrame(row: {
 				runId: payload['runId'] ?? String(row.id),
 				name: payload['name'] ?? 'unknown',
 				status: payload['status'] ?? 'ok',
-				summary: payload['summary']
+				summary: payload['summary'],
 			};
 		}
 		case 'interrupted': {
@@ -957,7 +956,7 @@ function eventRowToFrame(row: {
 				id: row.id,
 				role: 'assistant',
 				text: payload['text'] ?? '',
-				interrupted: true
+				interrupted: true,
 			};
 		}
 		default:

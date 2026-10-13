@@ -15,11 +15,11 @@ export const TRUNCATION_MARKER = '\n…[truncated to 48KB]';
 const McpToolSchema = v.strictObject({
 	name: v.string(),
 	description: v.optional(v.string()),
-	inputSchema: v.optional(v.unknown())
+	inputSchema: v.optional(v.unknown()),
 });
 
 const ToolsListResultSchema = v.strictObject({
-	tools: v.array(McpToolSchema)
+	tools: v.array(McpToolSchema),
 });
 
 export type McpServerConfig = { name: string; url: string; tokenEnv?: string };
@@ -77,13 +77,13 @@ async function doJsonRpc(
 	params: unknown,
 	fetchImpl: typeof fetch,
 	sessionIds: Map<string, string>,
-	timeoutMs = MCP_TIMEOUT_MS
+	timeoutMs = MCP_TIMEOUT_MS,
 ): Promise<unknown> {
 	const id = Math.floor(Math.random() * 1_000_000);
 	const body = { jsonrpc: '2.0' as const, id, method, params };
 	const headers: Record<string, string> = {
 		'content-type': 'application/json',
-		accept: 'application/json, text/event-stream'
+		accept: 'application/json, text/event-stream',
 	};
 	if (server.token) headers['authorization'] = `Bearer ${server.token}`;
 	const sid = sessionIds.get(server.name);
@@ -96,7 +96,7 @@ async function doJsonRpc(
 			method: 'POST',
 			headers,
 			body: JSON.stringify(body),
-			signal: controller.signal
+			signal: controller.signal,
 		});
 
 		const newSid =
@@ -193,10 +193,10 @@ export class McpClient {
 				{
 					protocolVersion: '2024-11-05',
 					capabilities: {},
-					clientInfo: { name: 'sugu', version: '0.0.0' }
+					clientInfo: { name: 'sugu', version: '0.0.0' },
 				},
 				this.fetchImpl,
-				this.sessionIds
+				this.sessionIds,
 			);
 		} catch {
 			// Initialize failure is not fatal — continue without session id
@@ -230,7 +230,7 @@ export class McpClient {
 					const def: McpToolDef = {
 						name: namespaced,
 						description: tool.description,
-						inputSchema: tool.inputSchema
+						inputSchema: tool.inputSchema,
 					};
 					allTools.push(def);
 					mapping.set(namespaced, { server, originalName: tool.name });
@@ -251,7 +251,7 @@ export class McpClient {
 
 	async callTool(
 		namespacedName: string,
-		args: unknown
+		args: unknown,
 	): Promise<{ text: string; truncated: boolean; isError: boolean; durationMs: number }> {
 		const entry = this.cachedTools?.mapping.get(namespacedName);
 		let server: ResolvedServer | undefined;
@@ -282,7 +282,7 @@ export class McpClient {
 				'tools/call',
 				{ name: originalName, arguments: args },
 				this.fetchImpl,
-				this.sessionIds
+				this.sessionIds,
 			)) as unknown as { content?: Array<{ type: string; text?: string }>; isError?: boolean } | { content?: string } | unknown;
 
 			let text: string;

@@ -5,7 +5,7 @@ import { McpClient, parseMcpServers, truncateResult, MAX_TOOL_RESULT_BYTES, TRUN
 function jsonResponse(body: unknown, headers: Record<string, string> = {}): Response {
 	return new Response(JSON.stringify(body), {
 		status: 200,
-		headers: { 'content-type': 'application/json', ...headers }
+		headers: { 'content-type': 'application/json', ...headers },
 	});
 }
 
@@ -13,7 +13,7 @@ function sseResponse(jsonRpcBody: unknown, headers: Record<string, string> = {})
 	const data = `data: ${JSON.stringify(jsonRpcBody)}\n\n`;
 	return new Response(data, {
 		status: 200,
-		headers: { 'content-type': 'text/event-stream', ...headers }
+		headers: { 'content-type': 'text/event-stream', ...headers },
 	});
 }
 
@@ -34,7 +34,7 @@ describe('parseMcpServers', () => {
 	test('parses valid servers', () => {
 		const env = {
 			SUGU_MCP_SERVERS: JSON.stringify([{ name: 'sepia', url: 'https://sepia.fly.dev/mcp', tokenEnv: 'SEPIA_TOKEN' }]),
-			SEPIA_TOKEN: 'secret123'
+			SEPIA_TOKEN: 'secret123',
 		};
 		const servers = parseMcpServers(env);
 		expect(servers.length).toBe(1);
@@ -45,14 +45,14 @@ describe('parseMcpServers', () => {
 	test('resolves token from env', () => {
 		const env = {
 			SUGU_MCP_SERVERS: JSON.stringify([{ name: 'a', url: 'https://a.example/mcp', tokenEnv: 'MY_TOKEN' }]),
-			MY_TOKEN: 'tok'
+			MY_TOKEN: 'tok',
 		};
 		expect(parseMcpServers(env)[0]!.token).toBe('tok');
 	});
 
 	test('missing tokenEnv still includes server without token', () => {
 		const env = {
-			SUGU_MCP_SERVERS: JSON.stringify([{ name: 'a', url: 'https://a.example/mcp', tokenEnv: 'MISSING' }])
+			SUGU_MCP_SERVERS: JSON.stringify([{ name: 'a', url: 'https://a.example/mcp', tokenEnv: 'MISSING' }]),
 		};
 		const servers = parseMcpServers(env);
 		expect(servers.length).toBe(1);
@@ -65,7 +65,7 @@ describe('parseMcpServers', () => {
 
 	test('invalid URL skipped', () => {
 		const env = {
-			SUGU_MCP_SERVERS: JSON.stringify([{ name: 'a', url: 'not-a-url' }])
+			SUGU_MCP_SERVERS: JSON.stringify([{ name: 'a', url: 'not-a-url' }]),
 		};
 		expect(parseMcpServers(env)).toEqual([]);
 	});
@@ -132,7 +132,7 @@ describe('McpClient', () => {
 		const client2 = new McpClient(
 			[{ name: 'sepia', url: 'https://sepia.example/mcp' }],
 			fetchWithCapture,
-			new Map([['sepia', 'sess-123']])
+			new Map([['sepia', 'sess-123']]),
 		);
 		await client2.listTools();
 		expect(capturedHeaders).not.toBeNull();
@@ -143,11 +143,11 @@ describe('McpClient', () => {
 		const toolResult = { jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'search', description: 's' }] } };
 		const jsonFetch = makeFetch([
 			jsonResponse({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2024-11-05' } }),
-			jsonResponse(toolResult)
+			jsonResponse(toolResult),
 		]);
 		const sseFetch = makeFetch([
 			sseResponse({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2024-11-05' } }),
-			sseResponse(toolResult)
+			sseResponse(toolResult),
 		]);
 
 		const clientJson = new McpClient([{ name: 'a', url: 'https://a.example/mcp' }], jsonFetch);
@@ -184,7 +184,7 @@ describe('McpClient', () => {
 		(client as unknown as { cachedTools: unknown }).cachedTools = {
 			tools: [{ name: 'a__search' }],
 			mapping: new Map([['a__search', { server: { name: 'a', url: 'https://a.example/mcp' }, originalName: 'search' }]]),
-			at: Date.now()
+			at: Date.now(),
 		};
 		(client as unknown as { cacheTurn: number }).cacheTurn = 0;
 		// callTool should timeout and return isError true
@@ -206,7 +206,7 @@ describe('McpClient', () => {
 						clearTimeout(timer);
 						reject(new DOMException('Aborted', 'AbortError'));
 					},
-					{ once: true }
+					{ once: true },
 				);
 			});
 		}) as unknown as typeof fetch;
@@ -214,7 +214,7 @@ describe('McpClient', () => {
 		(client2 as unknown as { cachedTools: unknown }).cachedTools = {
 			tools: [{ name: 'a__search' }],
 			mapping: new Map([['a__search', { server: { name: 'a', url: 'https://a.example/mcp' }, originalName: 'search' }]]),
-			at: Date.now()
+			at: Date.now(),
 		};
 		(client2 as unknown as { cacheTurn: number }).cacheTurn = 0;
 		const result = await client2.callTool('a__search', { q: 'hello' });
@@ -239,7 +239,7 @@ describe('McpClient', () => {
 		(client2 as unknown as { cachedTools: unknown }).cachedTools = {
 			tools: [{ name: 'a__search', description: 's' }],
 			mapping: new Map([['a__search', { server: { name: 'a', url: 'https://a.example/mcp' }, originalName: 'search' }]]),
-			at: Date.now()
+			at: Date.now(),
 		};
 		(client2 as unknown as { cacheTurn: number }).cacheTurn = 0;
 		const result = await client2.callTool('a__search', {});
@@ -263,9 +263,9 @@ describe('McpClient', () => {
 		const client = new McpClient(
 			[
 				{ name: 'sepia', url: 'https://sepia.example/mcp' },
-				{ name: 'exa', url: 'https://exa.example/mcp' }
+				{ name: 'exa', url: 'https://exa.example/mcp' },
 			],
-			fetchImpl
+			fetchImpl,
 		);
 		const { tools, mapping } = await client.listTools();
 		expect(tools.length).toBe(2);
@@ -295,7 +295,7 @@ describe('McpClient', () => {
 		(client as unknown as { cachedTools: unknown }).cachedTools = {
 			tools: [{ name: 'a__search' }],
 			mapping: new Map([['a__search', { server: { name: 'a', url: 'https://a.example/mcp' }, originalName: 'search' }]]),
-			at: Date.now()
+			at: Date.now(),
 		};
 		(client as unknown as { cacheTurn: number }).cacheTurn = 0;
 		const result = await client.callTool('a__search', {});

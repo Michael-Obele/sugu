@@ -79,7 +79,7 @@ describe('batch3b: Valibot malformed tools/list', () => {
 		const badFetch = (async () => {
 			return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: 'bad' } }), {
 				status: 200,
-				headers: { 'content-type': 'application/json' }
+				headers: { 'content-type': 'application/json' },
 			});
 		}) as unknown as typeof fetch;
 		const client = new McpClient([{ name: 'a', url: 'https://a.example/mcp' }], badFetch);
