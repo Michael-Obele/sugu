@@ -639,9 +639,7 @@ export class SessionCell extends DurableObject<Env> {
 					truncated
 				})
 			);
-			const toolFrameSeq = (
-				this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }
-			).id;
+			const toolFrameSeq = (this.ctx.storage.sql.exec('SELECT last_insert_rowid() as id').one() as unknown as { id: number }).id;
 			try {
 				ws.send(
 					JSON.stringify({
