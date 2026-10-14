@@ -315,3 +315,46 @@ describe('batch3g: default model resolution', () => {
 		expect(result2.defaultModel).not.toBe(result2.models[0]!.id);
 	});
 });
+
+describe('batch3g-fix: pre-3G session recovers model from index', () => {
+	test('cell with no stored model adopts index model rather than deepseek-chat', async () => {
+		const token = await signToken(SECRET);
+		const distinctive = 'openai/gpt-4o-mini';
+		const createRes = await fetch(`${BASE}/api/sessions`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', ...authHeader(token) },
+			body: JSON.stringify({ title: 'g-pre3g', model: distinctive })
+		});
+		expect(createRes.status).toBe(201);
+		const session = (await createRes.json()) as { id: string };
+
+		// Simulate a pre-3G cell: clear its stored model via the test-only seam
+		// POST /__test/clear-model { sessionId } (gated by MODEL_STUB, never in prod).
+		const clearRes = await fetch(`${BASE}/__test/clear-model`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+			body: JSON.stringify({ sessionId: session.id })
+		});
+		expect(clearRes.status).toBe(200);
+		const cleared = (await clearRes.json()) as { cleared: boolean };
+		expect(cleared.cleared).toBe(true);
+
+		// Reconnect: handleHello should recover from MetaCell and report the
+		// distinctive model, not the hardcoded fallback.
+		const ws = await wsConnect(session.id, token);
+		const frames = await waitForFrames(ws, (f) => f.some((x) => x['t'] === 'state'), 4000);
+		const state = frames.find((f) => f['t'] === 'state') as Record<string, unknown>;
+		expect(state['model']).toBe(distinctive);
+		expect(state['model']).not.toBe('deepseek-chat');
+		ws.close();
+		await new Promise((r) => setTimeout(r, 200));
+
+		// Second reconnect: model is now persisted locally, still distinctive
+		const ws2 = await wsConnect(session.id, token);
+		const frames2 = await waitForFrames(ws2, (f) => f.some((x) => x['t'] === 'state'), 4000);
+		const state2 = frames2.find((f) => f['t'] === 'state') as Record<string, unknown>;
+		expect(state2['model']).toBe(distinctive);
+		ws2.close();
+		await new Promise((r) => setTimeout(r, 200));
+	});
+});

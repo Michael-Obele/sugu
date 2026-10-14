@@ -132,6 +132,32 @@ export default {
 			return json({ token });
 		}
 
+		// Test-only seam: clear a SessionCell's stored model to simulate a pre-3G cell.
+		// Gated by MODEL_STUB (dev/test only, never in production).
+		if (url.pathname === '/__test/clear-model' && request.method === 'POST') {
+			if (!(env as unknown as Record<string, string | undefined>)['MODEL_STUB']) {
+				return errorJson('Not found', 404);
+			}
+			const authErr = await requireUserAuth(request, env);
+			if (authErr) return authErr;
+			let body: unknown;
+			try {
+				body = JSON.parse(await request.text());
+			} catch {
+				return errorJson('Invalid JSON', 400);
+			}
+			const sid = (body as Record<string, unknown>)['sessionId'];
+			if (typeof sid !== 'string' || !sid) return errorJson('Missing sessionId', 400);
+			const stub = env.SESSIONS.get(env.SESSIONS.idFromName(sid)) as unknown as {
+				clearStoredModel?: () => Promise<void>;
+			};
+			if (typeof stub.clearStoredModel === 'function') {
+				await stub.clearStoredModel();
+				return json({ cleared: true });
+			}
+			return json({ cleared: false });
+		}
+
 		// Probe endpoints — admin token only
 		if (url.pathname === '/api/probe/compute' && request.method === 'POST') {
 			const authErr = await requireAdminAuth(request, env);

@@ -245,6 +245,11 @@ export class SessionCell extends DurableObject<Env> {
 		return this.getModel();
 	}
 
+	// Test-only: clear stored model to simulate a pre-3G cell (gated by caller).
+	async clearStoredModel(): Promise<void> {
+		this.ctx.storage.sql.exec("DELETE FROM meta WHERE key = 'model'");
+	}
+
 	private isFirstUserMessage(): boolean {
 		const row = this.ctx.storage.sql.exec("SELECT COUNT(*) as c FROM events WHERE type = 'user'").one() as unknown as { c: number };
 		return row.c === 0;
@@ -364,6 +369,25 @@ export class SessionCell extends DurableObject<Env> {
 		if (frame.sessionId) {
 			const existing = this.getSessionId();
 			if (!existing) this.setSessionId(frame.sessionId);
+		}
+		// Batch 3G-fix: recover model for pre-3G sessions (no stored model).
+		// One-time fetch from MetaCell via this.env.META; persisted locally so
+		// later hellos (including after eviction) do not refetch. Fallback
+		// remains only for the genuinely unknown case (no index row).
+		if (this.getModel() === null) {
+			const sid = this.getSessionId() ?? frame.sessionId ?? null;
+			if (sid) {
+				try {
+					const metaNs = (this.env as unknown as { META: DurableObjectNamespace }).META;
+					if (metaNs) {
+						const meta = metaNs.getByName('index') as unknown as { get: (id: string) => Promise<{ model?: string } | null> };
+						const row = await meta.get(sid);
+						if (row?.model) this.setModel(row.model);
+					}
+				} catch {
+					// ignore — fallback remains deepseek-chat
+				}
+			}
 		}
 		const since = frame.since ?? 0;
 		// Replay events with id > since
