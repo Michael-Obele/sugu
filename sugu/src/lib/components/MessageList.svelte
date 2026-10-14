@@ -14,6 +14,7 @@
 	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
+	import Markdown from '$lib/components/Markdown.svelte';
 
 	type Props = {
 		messages: DisplayMessage[];
@@ -133,7 +134,7 @@
 										class="mt-1 rounded-md border border-border bg-muted/30 p-3 text-sm"
 									>
 										<pre
-											class="wrap-break-word whitespace-pre-wrap border-l-2 border-muted-foreground/20 pl-3 text-xs leading-relaxed text-muted-foreground italic">{msg.reasoning ??
+											class="border-l-2 border-muted-foreground/20 pl-3 text-xs leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground italic">{msg.reasoning ??
 												''}{#if msg.reasoningStreaming}<span
 													class="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-muted-foreground/30 align-text-bottom"
 													aria-hidden="true"></span>{/if}</pre>
@@ -157,8 +158,8 @@
 									align={msg.role === 'user' ? 'end' : 'start'}
 									class={cn(msg.streaming && 'streaming', msg.interrupted && 'border-dashed')}
 								>
-									<Bubble.Content class="wrap-break-word whitespace-pre-wrap">
-										{msg.text}
+									<Bubble.Content class="wrap-break-word">
+										<Markdown text={msg.text} streaming={msg.streaming} />
 										{#if msg.streaming}
 											<span
 												class="ml-0.5 inline-block h-4 w-2 animate-pulse bg-foreground/30 align-text-bottom"
