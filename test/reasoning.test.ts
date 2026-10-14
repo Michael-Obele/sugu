@@ -242,7 +242,7 @@ describe('thinking storage', () => {
 // Integration: live and replay agreement (requires dev server)
 // ---------------------------------------------------------------------------
 import { signToken } from '../src/server/auth';
-import { startDevServer, TEST_SECRETS, type DevServer } from './helpers/server';
+import { startDevServer, TEST_SECRETS } from './helpers/server';
 
 describe('reasoning live/replay agreement', () => {
 	test('reasoning persists and replays identically', async () => {
