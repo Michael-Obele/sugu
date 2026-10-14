@@ -184,3 +184,69 @@ describe('costFor', () => {
 		expect(cost).toBe(0);
 	});
 });
+
+describe('catalogue invariants', () => {
+	test('direct DeepSeek models present even with only OpenRouter live models', async () => {
+		const { getModels, DIRECT_DEEPSEEK_MODELS } = await import('../src/server/models');
+		// Simulate live catalogue with only OpenRouter entries
+		const fakePayload = {
+			data: [
+				{ id: 'openai/gpt-4o', name: 'GPT-4o', context_length: 128000, pricing: { prompt: '0.0000025', completion: '0.00001' } },
+				{ id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' } }
+			]
+		};
+		const fakeFetch = async () => new Response(JSON.stringify(fakePayload), { headers: { 'content-type': 'application/json' } });
+		const result = await getModels({}, { fetchImpl: fakeFetch as unknown as typeof fetch, cacheImpl: null });
+		expect(result.models.some((m) => m.id === 'deepseek-chat' && m.provider === 'deepseek')).toBe(true);
+		expect(result.models.some((m) => m.id === 'deepseek-reasoner' && m.provider === 'deepseek')).toBe(true);
+		// Direct first
+		expect(result.models[0]!.provider).toBe('deepseek');
+		expect(result.models[0]!.id).toBe('deepseek-chat');
+	});
+
+	test('every provider is deepseek or openrouter', async () => {
+		const { getModels } = await import('../src/server/models');
+		const result = await getModels({ MODEL_STUB: '1' }, { cacheImpl: null });
+		for (const m of result.models) {
+			expect(['deepseek', 'openrouter']).toContain(m.provider);
+		}
+	});
+
+	test('defaultModel is contained in models', async () => {
+		const { getModels } = await import('../src/server/models');
+		const result = await getModels({ MODEL_STUB: '1' }, { cacheImpl: null });
+		expect(result.models.some((m) => m.id === result.defaultModel)).toBe(true);
+	});
+
+	test('no duplicate ids', async () => {
+		const { getModels } = await import('../src/server/models');
+		const result = await getModels({ MODEL_STUB: '1' }, { cacheImpl: null });
+		const ids = result.models.map((m) => m.id);
+		expect(new Set(ids).size).toBe(ids.length);
+	});
+
+	test('fallback path still has direct models and no duplicates', async () => {
+		const { getModels } = await import('../src/server/models');
+		// Force fallback via failing fetch and no cache
+		const failingFetch = async () => { throw new Error('network down'); };
+		const result = await getModels({}, { fetchImpl: failingFetch as unknown as typeof fetch, cacheImpl: null });
+		expect(result.source).toBe('fallback');
+		expect(result.models.some((m) => m.id === 'deepseek-chat')).toBe(true);
+		const ids = result.models.map((m) => m.id);
+		expect(new Set(ids).size).toBe(ids.length);
+	});
+
+	test('mergeWithDirect de-duplicates and keeps direct first', async () => {
+		const { mergeWithDirect } = await import('../src/server/models');
+		const openRouterOnly: import('../src/server/models').ModelInfo[] = [
+			{ id: 'openai/gpt-4o', label: 'GPT-4o', provider: 'openrouter', priceKnown: true, price: { promptPerM: 2.5, completionPerM: 10 } },
+			{ id: 'deepseek-chat', label: 'DeepSeek Chat dup', provider: 'openrouter', priceKnown: false }
+		];
+		const merged = mergeWithDirect(openRouterOnly, 'deepseek-chat');
+		expect(merged[0]!.id).toBe('deepseek-chat');
+		expect(merged[0]!.provider).toBe('deepseek');
+		// dup should be removed
+		expect(merged.filter((m) => m.id === 'deepseek-chat').length).toBe(1);
+	});
+});
+

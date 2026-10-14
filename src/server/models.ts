@@ -88,6 +88,44 @@ const FALLBACK_MODELS: ModelInfo[] = [
 // Keep DEFAULT_MODELS for backward compat (batch2a tests) — alias to fallback.
 export const DEFAULT_MODELS: ModelInfo[] = FALLBACK_MODELS;
 
+// Direct DeepSeek models — always present at the top of the catalogue.
+export const DIRECT_DEEPSEEK_MODELS: ModelInfo[] = FALLBACK_MODELS.filter((m) => m.provider === 'deepseek');
+
+/**
+ * Merge direct DeepSeek models first, then the supplied list, de-duplicated by id.
+ * Ensures defaultModel is always present (synthetic entry if needed).
+ */
+export function mergeWithDirect(models: ModelInfo[], defaultModel: string): ModelInfo[] {
+	const seen = new Set<string>();
+	const out: ModelInfo[] = [];
+	for (const m of DIRECT_DEEPSEEK_MODELS) {
+		if (!seen.has(m.id)) {
+			seen.add(m.id);
+			out.push(m);
+		}
+	}
+	for (const m of models) {
+		if (!seen.has(m.id)) {
+			seen.add(m.id);
+			out.push(m);
+		}
+	}
+	if (!seen.has(defaultModel)) {
+		const isOpenRouter = defaultModel.includes('/');
+		const synthetic: ModelInfo = {
+			id: defaultModel,
+			label: defaultModel,
+			provider: isOpenRouter ? 'openrouter' : 'deepseek',
+			priceKnown: false
+		};
+		// Insert after direct entries to keep Direct group first
+		const insertAt = DIRECT_DEEPSEEK_MODELS.length;
+		out.splice(insertAt, 0, synthetic);
+		seen.add(defaultModel);
+	}
+	return out;
+}
+
 const BUILTIN_DEFAULT_MODEL = 'deepseek-chat';
 
 export function resolveDefaultModel(env: { SUGU_DEFAULT_MODEL?: string }): string {
@@ -766,10 +804,11 @@ export async function getModels(
 
 	// Test seam: when MODEL_STUB=1, avoid live fetch and return fallback (so tests never hit network)
 	if (env.MODEL_STUB === '1') {
-		let models = FALLBACK_MODELS;
+		const defaultModel = resolveDefaultModel(env);
+		let models = mergeWithDirect(FALLBACK_MODELS, defaultModel);
 		if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
 		updatePriceMap(models);
-		return { models, source: 'fallback', fetchedAt: new Date().toISOString(), defaultModel: resolveDefaultModel(env) };
+		return { models, source: 'fallback', fetchedAt: new Date().toISOString(), defaultModel };
 	}
 
 	const fetchImpl = opts?.fetchImpl ?? fetch;
@@ -793,50 +832,45 @@ export async function getModels(
 	if (cached) {
 		const age = (cached as unknown as Record<string, unknown>)['_age'] as number;
 		if (age < CACHE_TTL_MS) {
-			let models = cached.models;
+			const defaultModel = resolveDefaultModel(env);
+			let models = mergeWithDirect(cached.models, defaultModel);
 			if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
-			// Update price map from cached models (but keep original source/fetchedAt)
-			updatePriceMap(cached.models);
-			return { models, source: 'cache', fetchedAt: cached.fetchedAt, defaultModel: resolveDefaultModel(env) };
+			// Update price map from merged models (but keep original source/fetchedAt)
+			updatePriceMap(models);
+			return { models, source: 'cache', fetchedAt: cached.fetchedAt, defaultModel };
 		}
 	}
 
 	// Cache miss or stale — try live fetch
 	try {
 		const liveModels = await fetchLiveCatalogue(fetchImpl, url);
-		let models = liveModels;
+		const defaultModel = resolveDefaultModel(env);
+		let models = mergeWithDirect(liveModels, defaultModel);
 		if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
 		const result: CatalogueResult = {
-			models: liveModels,
+			models,
 			source: 'live',
 			fetchedAt: new Date().toISOString(),
-			defaultModel: resolveDefaultModel(env)
+			defaultModel
 		};
-		// For filtered case, we still cache the unfiltered live result, but return filtered
-		// Actually cache the filtered result so subsequent cache hits are already filtered? No — cache unfiltered and filter on read.
-		// Simpler: cache the liveModels unfiltered, return filtered view.
-		// But we need to return filtered models with source live.
-		// So we cache liveModels, then return filtered.
-		await writeCache(cache, { models: liveModels, source: 'live', fetchedAt: result.fetchedAt, defaultModel: result.defaultModel });
-		updatePriceMap(liveModels);
-		// Return filtered view but with live source
-		if (env.SUGU_MODELS_FILTER) {
-			return { models, source: 'live', fetchedAt: result.fetchedAt, defaultModel: resolveDefaultModel(env) };
-		}
-		return { ...result, defaultModel: resolveDefaultModel(env) };
+		await writeCache(cache, { models, source: 'live', fetchedAt: result.fetchedAt, defaultModel });
+		updatePriceMap(models);
+		return result;
 	} catch {
 		// Fetch failed — serve stale cache if available
 		if (cached) {
-			let models = cached.models;
+			const defaultModel = resolveDefaultModel(env);
+			let models = mergeWithDirect(cached.models, defaultModel);
 			if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
-			updatePriceMap(cached.models);
-			return { models, source: 'cache', fetchedAt: cached.fetchedAt, defaultModel: resolveDefaultModel(env) };
+			updatePriceMap(models);
+			return { models, source: 'cache', fetchedAt: cached.fetchedAt, defaultModel };
 		}
 		// No cache at all — fallback
-		let models = FALLBACK_MODELS;
+		const defaultModel = resolveDefaultModel(env);
+		let models = mergeWithDirect(FALLBACK_MODELS, defaultModel);
 		if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
-		updatePriceMap(FALLBACK_MODELS);
-		return { models, source: 'fallback', fetchedAt: new Date().toISOString(), defaultModel: resolveDefaultModel(env) };
+		updatePriceMap(models);
+		return { models, source: 'fallback', fetchedAt: new Date().toISOString(), defaultModel };
 	}
 }
 

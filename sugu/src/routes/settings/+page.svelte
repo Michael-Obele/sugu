@@ -15,6 +15,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
@@ -25,6 +26,7 @@
 	let selectedId = $state('');
 	let models = $state<ModelInfo[]>([]);
 	let modelsSource = $state('fallback');
+	let defaultModel = $state('deepseek-chat');
 	let selectedModel = $state('');
 	let savingModel = $state(false);
 	let modelError: string | null = $state(null);
@@ -74,6 +76,7 @@
 			const res = await getModels();
 			models = res.models;
 			modelsSource = res.source;
+			defaultModel = res.defaultModel;
 		} catch {
 			// keep fallback
 		}
@@ -150,7 +153,7 @@
 		>
 			<ArrowLeftIcon class="size-4" />
 		</a>
-		<h1 class="text-lg font-semibold flex items-center gap-2">
+		<h1 class="flex items-center gap-2 text-lg font-semibold">
 			<SettingsIcon class="size-5" />
 			Settings
 		</h1>
@@ -160,16 +163,21 @@
 		{#if sessions.length > 0}
 			<div class="space-y-2">
 				<Label for="session-select">Session</Label>
-				<select
-					id="session-select"
-					value={selectedId}
-					onchange={(e) => handleSessionChange((e.target as HTMLSelectElement).value)}
-					class="flex min-h-11 w-full rounded-md border bg-card px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-				>
-					{#each sessions as s (s.id)}
-						<option value={s.id}>{s.title || s.id.slice(0, 8)} · {s.model}</option>
-					{/each}
-				</select>
+				<Select.Root type="single" value={selectedId} onValueChange={(v) => handleSessionChange(v)}>
+					<Select.Trigger
+						id="session-select"
+						class="h-11 min-h-11 w-full justify-between rounded-md border !bg-card px-3 py-2 text-sm font-normal dark:!bg-card"
+					>
+						<Select.Value placeholder="Select session" />
+					</Select.Trigger>
+					<Select.Content>
+						{#each sessions as s (s.id)}
+							<Select.Item value={s.id} label="{s.title || s.id.slice(0, 8)} · {s.model}"
+								>{s.title || s.id.slice(0, 8)} · {s.model}</Select.Item
+							>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 
 			<div class="space-y-2">
@@ -177,6 +185,7 @@
 				<ModelPicker
 					{models}
 					value={selectedModel}
+					{defaultModel}
 					source={modelsSource}
 					onSelect={(id) => (selectedModel = id)}
 				/>
@@ -218,7 +227,7 @@
 		{/if}
 
 		{#if quota}
-			<div class="rounded-xl border p-4 space-y-2">
+			<div class="space-y-2 rounded-xl border p-4">
 				<p class="text-sm font-medium">Quota — {quota.day}</p>
 				<p class="text-sm text-muted-foreground">
 					Turns: {quota.turns} · Prompt: {quota.prompt_t} · Completion: {quota.compl_t} · Cost: ${quota.cost_usd.toFixed(
