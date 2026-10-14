@@ -27,4 +27,6 @@ interface Env {
 	SUGU_MODELS_URL?: string;
 	/** Batch 2C: comma-separated filter (id/label substring). */
 	SUGU_MODELS_FILTER?: string;
+	/** Batch 3G: operator default model (else deepseek-chat). */
+	SUGU_DEFAULT_MODEL?: string;
 }

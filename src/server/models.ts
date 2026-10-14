@@ -88,6 +88,16 @@ const FALLBACK_MODELS: ModelInfo[] = [
 // Keep DEFAULT_MODELS for backward compat (batch2a tests) — alias to fallback.
 export const DEFAULT_MODELS: ModelInfo[] = FALLBACK_MODELS;
 
+const BUILTIN_DEFAULT_MODEL = 'deepseek-chat';
+
+export function resolveDefaultModel(env: { SUGU_DEFAULT_MODEL?: string }): string {
+	const v = env.SUGU_DEFAULT_MODEL?.trim();
+	if (v) return v;
+	return BUILTIN_DEFAULT_MODEL;
+}
+
+export { BUILTIN_DEFAULT_MODEL };
+
 // In-memory price map for costFor — populated from catalogue (live, cache, or fallback).
 // Initialized with fallback prices so costFor works even before first fetch.
 const priceMap = new Map<string, { promptPerM: number; completionPerM: number }>();
@@ -457,6 +467,17 @@ export class StubAdapter implements ModelAdapter {
 		if (this.opts?.fail) {
 			throw new Error('stub model failure');
 		}
+		// Test seam: echo model in response when text is "echo-model"
+		if (this.opts?.text === 'echo-model') {
+			const echo = `model:${req.model}`;
+			for (let i = 0; i < echo.length; i += 5) {
+				if (signal.aborted) break;
+				yield { delta: echo.slice(i, i + 5) };
+				await new Promise<void>((r) => setTimeout(r, 5));
+			}
+			if (!signal.aborted) yield { usage: { promptTokens: 10, completionTokens: echo.length, costUsd: 0 } };
+			return;
+		}
 		// Test seam for tool loop: if MODEL_STUB_TEXT contains tool call markers, yield them.
 		// Format: MODEL_STUB_TEXT="tool:sepia__search:{\"q\":\"hello\"}|tool:other__tool:{}|final text"
 		// Or use MODEL_STUB_TOOL env var for more control.
@@ -586,6 +607,7 @@ type CatalogueResult = {
 	models: ModelInfo[];
 	source: 'live' | 'cache' | 'fallback';
 	fetchedAt: string;
+	defaultModel: string;
 };
 
 function updatePriceMap(models: ModelInfo[]) {
@@ -691,7 +713,7 @@ async function writeCache(cache: Cache | null, result: CatalogueResult): Promise
  * - fetchImpl and cacheImpl are injectable for tests (so tests use fixture, not network)
  */
 export async function getModels(
-	env: { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string },
+	env: { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string; SUGU_DEFAULT_MODEL?: string },
 	opts?: { fetchImpl?: typeof fetch; cacheImpl?: Cache | null }
 ): Promise<CatalogueResult> {
 	// Static override wins — no fetch, no cache
@@ -701,7 +723,7 @@ export async function getModels(
 			let models = overridden;
 			if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
 			updatePriceMap(models);
-			return { models, source: 'fallback', fetchedAt: new Date().toISOString() };
+			return { models, source: 'fallback', fetchedAt: new Date().toISOString(), defaultModel: resolveDefaultModel(env) };
 		}
 	}
 
@@ -710,7 +732,7 @@ export async function getModels(
 		let models = FALLBACK_MODELS;
 		if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
 		updatePriceMap(models);
-		return { models, source: 'fallback', fetchedAt: new Date().toISOString() };
+		return { models, source: 'fallback', fetchedAt: new Date().toISOString(), defaultModel: resolveDefaultModel(env) };
 	}
 
 	const fetchImpl = opts?.fetchImpl ?? fetch;
@@ -738,7 +760,7 @@ export async function getModels(
 			if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
 			// Update price map from cached models (but keep original source/fetchedAt)
 			updatePriceMap(cached.models);
-			return { models, source: 'cache', fetchedAt: cached.fetchedAt };
+			return { models, source: 'cache', fetchedAt: cached.fetchedAt, defaultModel: resolveDefaultModel(env) };
 		}
 	}
 
@@ -747,32 +769,32 @@ export async function getModels(
 		const liveModels = await fetchLiveCatalogue(fetchImpl, url);
 		let models = liveModels;
 		if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
-		const result: CatalogueResult = { models: liveModels, source: 'live', fetchedAt: new Date().toISOString() };
+		const result: CatalogueResult = { models: liveModels, source: 'live', fetchedAt: new Date().toISOString(), defaultModel: resolveDefaultModel(env) };
 		// For filtered case, we still cache the unfiltered live result, but return filtered
 		// Actually cache the filtered result so subsequent cache hits are already filtered? No — cache unfiltered and filter on read.
 		// Simpler: cache the liveModels unfiltered, return filtered view.
 		// But we need to return filtered models with source live.
 		// So we cache liveModels, then return filtered.
-		await writeCache(cache, { models: liveModels, source: 'live', fetchedAt: result.fetchedAt });
+		await writeCache(cache, { models: liveModels, source: 'live', fetchedAt: result.fetchedAt, defaultModel: result.defaultModel });
 		updatePriceMap(liveModels);
 		// Return filtered view but with live source
 		if (env.SUGU_MODELS_FILTER) {
-			return { models, source: 'live', fetchedAt: result.fetchedAt };
+			return { models, source: 'live', fetchedAt: result.fetchedAt, defaultModel: resolveDefaultModel(env) };
 		}
-		return result;
+		return { ...result, defaultModel: resolveDefaultModel(env) };
 	} catch {
 		// Fetch failed — serve stale cache if available
 		if (cached) {
 			let models = cached.models;
 			if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
 			updatePriceMap(cached.models);
-			return { models, source: 'cache', fetchedAt: cached.fetchedAt };
+			return { models, source: 'cache', fetchedAt: cached.fetchedAt, defaultModel: resolveDefaultModel(env) };
 		}
 		// No cache at all — fallback
 		let models = FALLBACK_MODELS;
 		if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
 		updatePriceMap(FALLBACK_MODELS);
-		return { models, source: 'fallback', fetchedAt: new Date().toISOString() };
+		return { models, source: 'fallback', fetchedAt: new Date().toISOString(), defaultModel: resolveDefaultModel(env) };
 	}
 }
 

@@ -227,6 +227,14 @@ export default {
 			const model = parsed.output.model?.trim() || 'deepseek-chat';
 			const meta = env.META.getByName('index');
 			const created = await meta.create({ id, title, model });
+			// Push model to SessionCell so its SQLite is the source of truth (survives eviction)
+			try {
+				const sid = env.SESSIONS.idFromName(id);
+				const stub = env.SESSIONS.get(sid) as unknown as { setStoredModel: (m: string) => Promise<void> };
+				await stub.setStoredModel(model);
+			} catch {
+				// best-effort — SessionCell will fallback to deepseek-chat if unset
+			}
 			return json(created, 201);
 		}
 
@@ -235,7 +243,7 @@ export default {
 			const authErr = await requireUserAuth(request, env);
 			if (authErr) return authErr;
 			const result = await getModels(
-				env as unknown as { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string }
+				env as unknown as { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string; SUGU_DEFAULT_MODEL?: string }
 			);
 			return json(result);
 		}
@@ -287,14 +295,30 @@ export default {
 				if (!updated) return errorJson('Not found', 404);
 				// Also update model if provided
 				if (parsed.output.model !== undefined) {
-					await meta.touch({ id, model: parsed.output.model.trim() });
+					const newModel = parsed.output.model.trim();
+					await meta.touch({ id, model: newModel });
+					try {
+						const sid = env.SESSIONS.idFromName(id);
+						const stub = env.SESSIONS.get(sid) as unknown as { setStoredModel: (m: string) => Promise<void> };
+						await stub.setStoredModel(newModel);
+					} catch {
+						// best-effort
+					}
 					const refreshed = await meta.get(id);
 					return json(refreshed!);
 				}
 				return json(updated);
 			}
 			if (parsed.output.model !== undefined) {
-				await meta.touch({ id, model: parsed.output.model.trim() });
+				const newModel = parsed.output.model.trim();
+				await meta.touch({ id, model: newModel });
+				try {
+					const sid = env.SESSIONS.idFromName(id);
+					const stub = env.SESSIONS.get(sid) as unknown as { setStoredModel: (m: string) => Promise<void> };
+					await stub.setStoredModel(newModel);
+				} catch {
+					// best-effort
+				}
 				const refreshed = await meta.get(id);
 				return json(refreshed!);
 			}

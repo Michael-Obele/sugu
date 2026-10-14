@@ -31,6 +31,7 @@ export type ModelsResponse = {
 	models: ModelInfo[];
 	source: 'live' | 'cache' | 'fallback';
 	fetchedAt: string;
+	defaultModel: string;
 };
 
 export type EventsPage = {

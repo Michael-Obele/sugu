@@ -220,6 +220,33 @@ export class SessionCell extends DurableObject<Env> {
 		);
 	}
 
+	private getModel(): string | null {
+		try {
+			const row = this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'model'").one() as unknown as
+				| { value: string }
+				| undefined;
+			return row?.value ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	private setModel(model: string): void {
+		this.ctx.storage.sql.exec(
+			"INSERT INTO meta (key, value) VALUES ('model', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+			model
+		);
+	}
+
+	// Public RPC for Worker to push model on create/PATCH (persists in SQLite, survives eviction)
+	async setStoredModel(model: string): Promise<void> {
+		this.setModel(model);
+	}
+
+	async getStoredModel(): Promise<string | null> {
+		return this.getModel();
+	}
+
 	private isFirstUserMessage(): boolean {
 		const row = this.ctx.storage.sql.exec("SELECT COUNT(*) as c FROM events WHERE type = 'user'").one() as unknown as { c: number };
 		return row.c === 0;
@@ -537,7 +564,7 @@ export class SessionCell extends DurableObject<Env> {
 
 		// Build prompt: system + skills + capped history
 		const messages = this.buildMessages(frame.text, skillsInjection, skillsNotes);
-		const model = 'deepseek-chat';
+		const model = this.getModel() ?? 'deepseek-chat';
 
 		let finalText = '';
 		let promptTokens = 0;
@@ -986,7 +1013,7 @@ export class SessionCell extends DurableObject<Env> {
 			seq,
 			todos: todoList,
 			busy: this.busy,
-			model: 'deepseek-chat'
+			model: this.getModel() ?? 'deepseek-chat'
 		} as Frame;
 	}
 }

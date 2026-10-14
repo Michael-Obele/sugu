@@ -47,8 +47,11 @@
 			const res = await getModels();
 			models = res.models;
 			modelsSource = res.source;
-			if (models.length > 0 && !models.find((m) => m.id === newModel)) {
-				newModel = models[0]!.id;
+			// Default is the operator's SUGU_DEFAULT_MODEL (via API), else deepseek-chat.
+			// Never blindly use models[0] — it is ~9x the intended price and unstable.
+			// If the configured default is not in the catalogue, still use it (operator asked for it).
+			if (res.defaultModel) {
+				newModel = res.defaultModel;
 			}
 		} catch {
 			// keep fallback
