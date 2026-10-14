@@ -25,6 +25,7 @@
 			status: 'pending' | 'sent' | 'failed';
 			error?: string;
 		}[];
+		detailLevel?: 'compact' | 'full';
 		hasMore?: boolean;
 		loadingEarlier?: boolean;
 		onLoadEarlier?: () => void;
@@ -38,6 +39,7 @@
 		tools = [],
 		errs = [],
 		pendingSends = [],
+		detailLevel = 'compact',
 		hasMore = false,
 		loadingEarlier = false,
 		onLoadEarlier,
@@ -154,6 +156,7 @@
 											: 'border-border bg-card text-muted-foreground'
 									)}
 									aria-label={`Tool ${tool.name} ${tool.status}`}
+									disabled={detailLevel === 'compact'}
 								>
 									<span class="font-mono text-xs truncate">ran `{tool.name}`</span>
 									{#if tool.durationMs !== undefined}
@@ -168,11 +171,13 @@
 									{:else}
 										<Spinner class="ml-auto size-3" />
 									{/if}
-									<ChevronDownIcon
-										class="size-4 shrink-0 opacity-50 group-data-[state=open]/collapsible:rotate-180 transition-transform"
-									/>
+									{#if detailLevel === 'full'}
+										<ChevronDownIcon
+											class="size-4 shrink-0 opacity-50 group-data-[state=open]/collapsible:rotate-180 transition-transform"
+										/>
+									{/if}
 								</Collapsible.Trigger>
-								{#if tool.summary}
+								{#if detailLevel === 'full' && tool.summary}
 									<Collapsible.Content class="mt-1 rounded-md border bg-card p-3 text-sm">
 										<pre class="whitespace-pre-wrap break-words text-xs">{trunc.display}</pre>
 										{#if trunc.truncated || tool.truncated}

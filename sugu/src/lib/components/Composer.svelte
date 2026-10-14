@@ -5,6 +5,10 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import SkillPicker from '$lib/components/SkillPicker.svelte';
 	import SkillChips from '$lib/components/SkillChips.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import { activeTrigger } from '$lib/composer-triggers';
+	import { getCommand, commandInsertText, parseCommand } from '$lib/commands';
+	import { detailLevelStore } from '$lib/detail-level.svelte';
 	import type { SkillInfo } from '$lib/api';
 
 	type Props = {
@@ -18,6 +22,7 @@
 		onSend: (text: string, skills?: string[]) => void;
 		onCancel?: () => void;
 		onSkillsChange?: (skills: string[]) => void;
+		onCommand?: (name: string, args: string) => void;
 	};
 
 	let {
@@ -30,13 +35,18 @@
 		selectedSkills = $bindable([]),
 		onSend,
 		onCancel,
-		onSkillsChange
+		onSkillsChange,
+		onCommand
 	}: Props = $props();
 
 	let textareaEl: HTMLTextAreaElement | null = $state(null);
 	let pickerOpen = $state(false);
 	let pickerQuery = $state('');
 	let hashTriggerPos: number | null = $state(null);
+
+	let commandOpen = $state(false);
+	let commandQuery = $state('');
+	let slashTriggerPos: number | null = $state(null);
 
 	function autogrow(): void {
 		if (!textareaEl) return;
@@ -50,34 +60,70 @@
 		e.preventDefault();
 		const text = value.trim();
 		if (!text || busy || disabled) return;
+		const parsed = parseCommand(text);
+		if (parsed && getCommand(parsed.name)) {
+			const cmd = getCommand(parsed.name)!;
+			if (!cmd.takesArg || parsed.args) {
+				value = '';
+				selectedSkills = [];
+				onSkillsChange?.([]);
+				commandOpen = false;
+				pickerOpen = false;
+				requestAnimationFrame(autogrow);
+				onCommand?.(parsed.name, parsed.args);
+				return;
+			}
+		}
 		onSend(text, selectedSkills.length > 0 ? [...selectedSkills] : undefined);
 		value = '';
 		selectedSkills = [];
 		onSkillsChange?.([]);
 		pickerOpen = false;
+		commandOpen = false;
 		requestAnimationFrame(autogrow);
 	}
 
 	function handleKeydown(e: KeyboardEvent): void {
 		if (e.key === 'Enter' && !e.shiftKey) {
-			if (pickerOpen) {
-				// Let picker handle Enter
+			if (pickerOpen || commandOpen) {
 				return;
 			}
 			e.preventDefault();
 			const text = value.trim();
 			if (!text || busy || disabled) return;
+			const parsed = parseCommand(text);
+			if (parsed && getCommand(parsed.name)) {
+				const cmd = getCommand(parsed.name)!;
+				if (!cmd.takesArg || parsed.args) {
+					value = '';
+					selectedSkills = [];
+					onSkillsChange?.([]);
+					requestAnimationFrame(autogrow);
+					onCommand?.(parsed.name, parsed.args);
+					return;
+				}
+			}
 			onSend(text, selectedSkills.length > 0 ? [...selectedSkills] : undefined);
 			value = '';
 			selectedSkills = [];
 			onSkillsChange?.([]);
 			pickerOpen = false;
+			commandOpen = false;
 			requestAnimationFrame(autogrow);
 		}
-		if (e.key === 'Escape' && pickerOpen) {
-			pickerOpen = false;
-			pickerQuery = '';
-			hashTriggerPos = null;
+		if (e.key === 'Escape') {
+			if (commandOpen) {
+				commandOpen = false;
+				slashTriggerPos = null;
+				e.preventDefault();
+				return;
+			}
+			if (pickerOpen) {
+				pickerOpen = false;
+				pickerQuery = '';
+				hashTriggerPos = null;
+				e.preventDefault();
+			}
 		}
 	}
 
@@ -85,38 +131,36 @@
 		autogrow();
 		if (!textareaEl) return;
 		const pos = textareaEl.selectionStart ?? value.length;
-		const before = value.slice(0, pos);
-		const hashIdx = before.lastIndexOf('#');
-		if (hashIdx === -1) {
-			if (pickerOpen) {
-				pickerOpen = false;
-				pickerQuery = '';
-				hashTriggerPos = null;
-			}
+		const slashState = activeTrigger(value, pos, '/');
+		const hashState = activeTrigger(value, pos, '#');
+
+		if (slashState.open && slashState.index === 0) {
+			commandQuery = slashState.query;
+			slashTriggerPos = slashState.index;
+			commandOpen = true;
+			pickerOpen = false;
+			pickerQuery = '';
+			hashTriggerPos = null;
 			return;
 		}
-		// Check that # is at start or preceded by whitespace
-		if (hashIdx > 0 && !/\s/.test(before[hashIdx - 1]!)) {
-			if (pickerOpen) {
-				pickerOpen = false;
-				pickerQuery = '';
-				hashTriggerPos = null;
-			}
+		if (hashState.open) {
+			pickerQuery = hashState.query;
+			hashTriggerPos = hashState.index;
+			pickerOpen = true;
+			commandOpen = false;
+			slashTriggerPos = null;
 			return;
 		}
-		const afterHash = before.slice(hashIdx + 1);
-		// If contains space, the # token is complete — close picker
-		if (/\s/.test(afterHash)) {
-			if (pickerOpen) {
-				pickerOpen = false;
-				pickerQuery = '';
-				hashTriggerPos = null;
-			}
-			return;
+		if (commandOpen) {
+			commandOpen = false;
+			commandQuery = '';
+			slashTriggerPos = null;
 		}
-		pickerQuery = afterHash;
-		hashTriggerPos = hashIdx;
-		pickerOpen = true;
+		if (pickerOpen) {
+			pickerOpen = false;
+			pickerQuery = '';
+			hashTriggerPos = null;
+		}
 	}
 
 	function handleSkillSelect(name: string): void {
@@ -128,13 +172,11 @@
 		const next = [...selectedSkills, name];
 		selectedSkills = next;
 		onSkillsChange?.(next);
-		// Remove the #query from the textarea
 		if (hashTriggerPos !== null && textareaEl) {
 			const before = value.slice(0, hashTriggerPos);
 			const pos = textareaEl.selectionStart ?? value.length;
 			const after = value.slice(pos);
 			value = before + after;
-			// Move cursor to where # was
 			requestAnimationFrame(() => {
 				if (!textareaEl) return;
 				textareaEl.selectionStart = textareaEl.selectionEnd = hashTriggerPos ?? 0;
@@ -152,6 +194,64 @@
 		selectedSkills = next;
 		onSkillsChange?.(next);
 	}
+
+	function handleCommandSelect(name: string): void {
+		const cmd = getCommand(name);
+		if (!cmd) return;
+		if (cmd.takesArg) {
+			const insert = commandInsertText(cmd);
+			if (slashTriggerPos !== null && textareaEl) {
+				const before = value.slice(0, slashTriggerPos);
+				const pos = textareaEl.selectionStart ?? value.length;
+				const after = value.slice(pos);
+				value = before + insert + after;
+				requestAnimationFrame(() => {
+					if (!textareaEl) return;
+					const newPos = (slashTriggerPos ?? 0) + insert.length;
+					textareaEl.selectionStart = textareaEl.selectionEnd = newPos;
+					autogrow();
+					textareaEl.focus();
+				});
+			} else {
+				value = insert;
+				requestAnimationFrame(() => {
+					if (!textareaEl) return;
+					textareaEl.selectionStart = textareaEl.selectionEnd = insert.length;
+					autogrow();
+					textareaEl.focus();
+				});
+			}
+			commandOpen = false;
+			commandQuery = '';
+			slashTriggerPos = null;
+		} else {
+			if (slashTriggerPos !== null && textareaEl) {
+				const pos = textareaEl.selectionStart ?? value.length;
+				const before = value.slice(0, slashTriggerPos);
+				const after = value.slice(pos);
+				value = before + after;
+				requestAnimationFrame(() => {
+					if (!textareaEl) return;
+					textareaEl.selectionStart = textareaEl.selectionEnd = slashTriggerPos ?? 0;
+					autogrow();
+				});
+			} else {
+				value = '';
+			}
+			commandOpen = false;
+			commandQuery = '';
+			slashTriggerPos = null;
+			onCommand?.(name, '');
+		}
+	}
+
+	function handleCommandOpenChange(open: boolean): void {
+		commandOpen = open;
+		if (!open) {
+			commandQuery = '';
+			slashTriggerPos = null;
+		}
+	}
 </script>
 
 <div class="border-t bg-background sticky bottom-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -163,6 +263,13 @@
 		bind:open={pickerOpen}
 		bind:query={pickerQuery}
 		onSelect={handleSkillSelect}
+	/>
+	<CommandPalette
+		bind:open={commandOpen}
+		bind:query={commandQuery}
+		detailLevel={detailLevelStore.level}
+		onSelect={handleCommandSelect}
+		onOpenChange={handleCommandOpenChange}
 	/>
 	<form onsubmit={handleSubmit} class={cn('flex items-end gap-2 p-3 pt-2')}>
 		<textarea

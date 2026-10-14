@@ -15,6 +15,8 @@
 	} from '$lib/api';
 	import type { ModelInfo, SkillInfo } from '$lib/api';
 	import { sessionStore } from '$lib/session.svelte';
+	import { COMMANDS } from '$lib/commands';
+	import { detailLevelStore } from '$lib/detail-level.svelte';
 	import { applyFrame } from '$lib/frames';
 	import type { Frame } from '../../../../../src/shared/contracts';
 
@@ -65,6 +67,9 @@
 	let showRenameDialog = $state(false);
 	let renameValue = $state('');
 	let renameSaving = $state(false);
+
+	let showHelpDialog = $state(false);
+	let detailLevel = $derived(detailLevelStore.level);
 
 	async function loadSkills(): Promise<void> {
 		try {
@@ -271,6 +276,39 @@
 		}
 	}
 
+	async function handleCommand(name: string, args: string): Promise<void> {
+		if (name === 'details') {
+			detailLevelStore.toggle();
+			return;
+		}
+		if (name === 'models') {
+			await openModelPicker();
+			return;
+		}
+		if (name === 'sessions') {
+			goto('/');
+			return;
+		}
+		if (name === 'new') {
+			goto('/');
+			return;
+		}
+		if (name === 'export') {
+			await handleExport();
+			return;
+		}
+		if (name === 'help') {
+			showHelpDialog = true;
+			return;
+		}
+		if (name === 'todo') {
+			if (args) {
+				sessionStore.addLocalTodo(`/todo ${args}`);
+			}
+			return;
+		}
+	}
+
 	let connectionLabel = $derived(
 		sessionStore.connection === 'open'
 			? 'Connected'
@@ -384,6 +422,7 @@
 	<MessageList
 		messages={sessionStore.messages}
 		tools={sessionStore.tools}
+		{detailLevel}
 		errs={sessionStore.errs}
 		pendingSends={sessionStore.pendingSends}
 		{hasMore}
@@ -404,6 +443,7 @@
 		bind:selectedSkills
 		onSend={handleSend}
 		onCancel={handleCancel}
+		onCommand={handleCommand}
 	/>
 
 	<!-- Model picker dialog -->
@@ -459,6 +499,29 @@
 				>
 					{renameSaving ? 'Saving…' : 'Save'}
 				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Help dialog — renders from the same COMMANDS registry as the palette -->
+	<Dialog.Root bind:open={showHelpDialog}>
+		<Dialog.Content class="sm:max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>Commands</Dialog.Title>
+				<Dialog.Description>Available slash commands.</Dialog.Description>
+			</Dialog.Header>
+			<div class="flex flex-col gap-1 py-2">
+				{#each COMMANDS as cmd (cmd.name)}
+					<div class="flex items-baseline gap-2 rounded-md px-3 py-2">
+						<span class="shrink-0 font-mono text-sm font-medium">/{cmd.name}</span>
+						<span class="text-sm text-muted-foreground">{cmd.description}</span>
+					</div>
+				{/each}
+			</div>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showHelpDialog = false)} class="min-h-[44px]"
+					>Close</Button
+				>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>

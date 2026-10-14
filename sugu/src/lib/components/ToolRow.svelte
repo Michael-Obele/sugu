@@ -11,9 +11,10 @@
 		summary?: string;
 		durationMs?: number;
 		truncated?: boolean;
+		detailLevel?: 'compact' | 'full';
 	};
 
-	let { name, status, summary, durationMs, truncated }: Props = $props();
+	let { name, status, summary, durationMs, truncated, detailLevel = 'compact' }: Props = $props();
 
 	function truncate(
 		text: string,
@@ -36,6 +37,7 @@
 				: 'border-border bg-card text-muted-foreground'
 		)}
 		aria-label={`Tool ${name} ${status}${durationMs !== undefined ? ` ${durationMs}ms` : ''}`}
+		disabled={detailLevel === 'compact'}
 	>
 		<span class="font-mono text-xs truncate">ran `{name}`</span>
 		{#if durationMs !== undefined}
@@ -48,13 +50,13 @@
 		{:else}
 			<Spinner class="ml-auto size-3" />
 		{/if}
-		{#if summary}
+		{#if detailLevel === 'full' && summary}
 			<ChevronDownIcon
 				class="size-4 shrink-0 opacity-50 group-data-[state=open]/collapsible:rotate-180 transition-transform"
 			/>
 		{/if}
 	</Collapsible.Trigger>
-	{#if summary && trunc}
+	{#if detailLevel === 'full' && summary && trunc}
 		<Collapsible.Content class="mt-1 rounded-md border bg-card p-3 text-sm">
 			<pre class="whitespace-pre-wrap break-words text-xs">{trunc.display}</pre>
 			{#if isTruncated}
