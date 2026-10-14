@@ -145,7 +145,7 @@
 	<header class="safe-top flex h-14 items-center gap-2 border-b px-4">
 		<a
 			href="/"
-			class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md px-2 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			class="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 			aria-label="Back"
 		>
 			<ArrowLeftIcon class="size-4" />
@@ -164,7 +164,7 @@
 					id="session-select"
 					value={selectedId}
 					onchange={(e) => handleSessionChange((e.target as HTMLSelectElement).value)}
-					class="flex min-h-[44px] w-full rounded-md border bg-card px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					class="flex min-h-11 w-full rounded-md border bg-card px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 				>
 					{#each sessions as s (s.id)}
 						<option value={s.id}>{s.title || s.id.slice(0, 8)} · {s.model}</option>
@@ -189,7 +189,7 @@
 				<Button
 					onclick={handleModelSave}
 					disabled={savingModel || !selectedModel}
-					class="min-h-[44px] w-full"
+					class="min-h-11 w-full"
 				>
 					{#if savingModel}
 						<Spinner class="size-4" />
@@ -207,7 +207,7 @@
 					variant="outline"
 					onclick={handleExportAll}
 					disabled={exportAllLoading || sessions.length === 0}
-					class="min-h-[44px] w-full gap-2"
+					class="min-h-11 w-full gap-2"
 				>
 					<DownloadIcon class="size-4" />
 					{exportAllLoading ? 'Exporting…' : `Export all (${sessions.length})`}
@@ -276,7 +276,7 @@
 		{/if}
 
 		<div class="mt-auto">
-			<Button variant="destructive" onclick={handleLogout} class="min-h-[44px] w-full gap-2">
+			<Button variant="destructive" onclick={handleLogout} class="min-h-11 w-full gap-2">
 				<LogOutIcon class="size-4" />
 				Logout
 			</Button>

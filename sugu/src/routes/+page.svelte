@@ -104,7 +104,7 @@
 		<h1 class="text-lg font-semibold">Sugu</h1>
 		<a
 			href="/settings"
-			class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md px-3 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			class="flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 			aria-label="Settings"
 		>
 			<SettingsIcon class="size-5" />
@@ -120,7 +120,7 @@
 		{:else if error && sessions.length === 0}
 			<div class="mx-4 mt-4 rounded-xl border border-destructive/50 bg-destructive/10 p-4">
 				<p class="text-sm text-destructive">{error}</p>
-				<Button variant="outline" onclick={() => location.reload()} class="mt-2 min-h-[44px]"
+				<Button variant="outline" onclick={() => location.reload()} class="mt-2 min-h-11"
 					>Retry</Button
 				>
 			</div>
@@ -148,7 +148,7 @@
 						bind:value={newTitle}
 						placeholder="New session"
 						maxlength={60}
-						class="min-h-[44px]"
+						class="min-h-11"
 					/>
 				</div>
 				<div class="flex flex-col gap-2">
@@ -167,7 +167,7 @@
 						/>
 					{/if}
 				</div>
-				<Button onclick={handleCreate} disabled={creating} class="min-h-[44px] w-full gap-2">
+				<Button onclick={handleCreate} disabled={creating} class="min-h-11 w-full gap-2">
 					{#if creating}
 						<Spinner class="size-4" />
 						Creating…

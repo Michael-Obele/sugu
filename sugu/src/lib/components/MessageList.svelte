@@ -89,7 +89,7 @@
 				size="sm"
 				disabled={loadingEarlier}
 				onclick={() => onLoadEarlier?.()}
-				class="min-h-[44px] gap-1.5"
+				class="min-h-11 gap-1.5"
 			>
 				{#if loadingEarlier}
 					<Spinner class="size-4" />
@@ -118,7 +118,7 @@
 									align={msg.role === 'user' ? 'end' : 'start'}
 									class={cn(msg.streaming && 'streaming', msg.interrupted && 'border-dashed')}
 								>
-									<Bubble.Content class="break-words whitespace-pre-wrap">
+									<Bubble.Content class="wrap-break-word whitespace-pre-wrap">
 										{msg.text}
 										{#if msg.streaming}
 											<span
@@ -139,7 +139,7 @@
 											variant="outline"
 											size="xs"
 											onclick={() => onRerun(msg.text)}
-											class="ml-2 min-h-[32px] gap-1"
+											class="ml-2 min-h-8 gap-1"
 										>
 											<RotateCcwIcon class="size-3" />
 											Re-run
@@ -153,7 +153,7 @@
 								<Collapsible.Root class="w-full">
 									<Collapsible.Trigger
 										class={cn(
-											'flex min-h-[44px] w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+											'flex min-h-11 w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
 											tool.status === 'failed'
 												? 'border-destructive/50 bg-destructive/10 text-destructive'
 												: 'border-border bg-card text-muted-foreground'
@@ -182,7 +182,7 @@
 									</Collapsible.Trigger>
 									{#if detailLevel === 'full' && tool.summary}
 										<Collapsible.Content class="mt-1 rounded-md border bg-card p-3 text-sm">
-											<pre class="text-xs break-words whitespace-pre-wrap">{trunc.display}</pre>
+											<pre class="text-xs wrap-break-word whitespace-pre-wrap">{trunc.display}</pre>
 											{#if trunc.truncated || tool.truncated}
 												<p class="mt-2 text-xs text-muted-foreground">
 													…[truncated to 48KB]{#if trunc.truncated}
@@ -227,7 +227,7 @@
 										variant="default"
 										size="xs"
 										onclick={() => onRetryPending?.(p.id)}
-										class="min-h-[32px]"
+										class="min-h-8"
 									>
 										Retry
 									</Button>
@@ -235,7 +235,7 @@
 										variant="outline"
 										size="xs"
 										onclick={() => onDismissPending?.(p.id)}
-										class="min-h-[32px]"
+										class="min-h-8"
 									>
 										Dismiss
 									</Button>

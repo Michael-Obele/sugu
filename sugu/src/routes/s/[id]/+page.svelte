@@ -340,7 +340,7 @@
 			<button
 				type="button"
 				onclick={() => (sessionStore.error = null)}
-				class="min-h-[44px] min-w-[44px] rounded-md px-2 text-xs underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				class="min-h-11 min-w-11 rounded-md px-2 text-xs underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 				>Dismiss</button
 			>
 		</div>
@@ -349,7 +349,7 @@
 	<header class="safe-top flex h-14 shrink-0 items-center gap-2 border-b px-4">
 		<a
 			href="/"
-			class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md px-2 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			class="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 			aria-label="Back to sessions"
 		>
 			<ArrowLeftIcon class="size-4" />
@@ -382,7 +382,7 @@
 					<button
 						type="button"
 						{...props}
-						class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md px-2 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						class="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 						aria-label="Session actions"
 					>
 						<EllipsisIcon class="size-4" />
@@ -462,13 +462,13 @@
 				/>
 			</div>
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showModelDialog = false)} class="min-h-[44px]"
+				<Button variant="outline" onclick={() => (showModelDialog = false)} class="min-h-11"
 					>Cancel</Button
 				>
 				<Button
 					onclick={handleModelChange}
 					disabled={savingModel || !selectedModel}
-					class="min-h-[44px]"
+					class="min-h-11"
 				>
 					{savingModel ? 'Saving…' : 'Save'}
 				</Button>
@@ -485,17 +485,17 @@
 			</Dialog.Header>
 			<div class="flex flex-col gap-2">
 				<Label for="rename-input">Title</Label>
-				<Input id="rename-input" bind:value={renameValue} maxlength={60} class="min-h-[44px]" />
+				<Input id="rename-input" bind:value={renameValue} maxlength={60} class="min-h-11" />
 				<span class="text-xs text-muted-foreground">{renameValue.length}/60</span>
 			</div>
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showRenameDialog = false)} class="min-h-[44px]"
+				<Button variant="outline" onclick={() => (showRenameDialog = false)} class="min-h-11"
 					>Cancel</Button
 				>
 				<Button
 					onclick={handleRename}
 					disabled={renameSaving || !renameValue.trim()}
-					class="min-h-[44px]"
+					class="min-h-11"
 				>
 					{renameSaving ? 'Saving…' : 'Save'}
 				</Button>
@@ -519,7 +519,7 @@
 				{/each}
 			</div>
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showHelpDialog = false)} class="min-h-[44px]"
+				<Button variant="outline" onclick={() => (showHelpDialog = false)} class="min-h-11"
 					>Close</Button
 				>
 			</Dialog.Footer>

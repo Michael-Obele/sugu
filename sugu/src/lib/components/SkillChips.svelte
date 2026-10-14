@@ -20,7 +20,7 @@
 				<button
 					type="button"
 					onclick={() => onRemove?.(name)}
-					class="ml-1 inline-flex min-h-[20px] min-w-[20px] items-center justify-center rounded-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					class="ml-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 					aria-label="Remove {name}"
 				>
 					<XIcon class="size-3" />

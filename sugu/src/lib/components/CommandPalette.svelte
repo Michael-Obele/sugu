@@ -64,7 +64,7 @@
 							value={cmd.name}
 							keywords={[cmd.name, cmd.description]}
 							onSelect={() => handleSelect(cmd.name)}
-							class="min-h-[44px] gap-2"
+							class="min-h-11 gap-2"
 						>
 							<SlashIcon class="size-4 shrink-0 text-muted-foreground" />
 							<span class="truncate text-sm font-medium">/{cmd.name}</span>

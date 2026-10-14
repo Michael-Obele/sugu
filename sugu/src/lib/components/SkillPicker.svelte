@@ -64,7 +64,7 @@
 							<Command.Item
 								value={skill.name}
 								onSelect={() => handleSelect(skill.name)}
-								class="flex min-h-[44px] items-center gap-2 py-2"
+								class="flex min-h-11 items-center gap-2 py-2"
 							>
 								<HashIcon class="size-4 shrink-0 text-muted-foreground" />
 								<span class="flex-1 truncate text-sm font-medium">{skill.name}</span>

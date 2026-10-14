@@ -281,7 +281,7 @@
 			disabled={busy || disabled}
 			rows={1}
 			class={cn(
-				'max-h-32 min-h-[44px] flex-1 resize-none rounded-xl border bg-card px-4 py-3 text-sm leading-6',
+				'max-h-32 min-h-11 flex-1 resize-none rounded-xl border bg-card px-4 py-3 text-sm leading-6',
 				'placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
 				'disabled:opacity-50'
 			)}
@@ -292,7 +292,7 @@
 				variant="outline"
 				size="default"
 				onclick={() => onCancel?.()}
-				class="min-h-[44px] min-w-[44px]"
+				class="min-h-11 min-w-11"
 				aria-label="Stop generating"
 			>
 				<SquareIcon class="size-4" />
@@ -302,7 +302,7 @@
 			<Button
 				type="submit"
 				disabled={!value.trim() || disabled}
-				class="min-h-[44px] min-w-[44px]"
+				class="min-h-11 min-w-11"
 				aria-label="Send message"
 			>
 				<SendIcon class="size-4" />

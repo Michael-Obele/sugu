@@ -31,7 +31,7 @@
 <Collapsible.Root class="w-full">
 	<Collapsible.Trigger
 		class={cn(
-			'flex min-h-[44px] w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+			'flex min-h-11 w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
 			status === 'failed'
 				? 'border-destructive/50 bg-destructive/10 text-destructive'
 				: 'border-border bg-card text-muted-foreground'
@@ -58,7 +58,7 @@
 	</Collapsible.Trigger>
 	{#if detailLevel === 'full' && summary && trunc}
 		<Collapsible.Content class="mt-1 rounded-md border bg-card p-3 text-sm">
-			<pre class="whitespace-pre-wrap break-words text-xs">{trunc.display}</pre>
+			<pre class="whitespace-pre-wrap wrap-break-word text-xs">{trunc.display}</pre>
 			{#if isTruncated}
 				<p class="mt-2 text-xs text-muted-foreground">
 					…[truncated to 48KB] — {trunc.hidden > 0

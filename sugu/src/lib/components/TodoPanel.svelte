@@ -25,7 +25,7 @@
 	<Collapsible.Root bind:open class="border-b bg-card/50">
 		<Collapsible.Trigger
 			class={cn(
-				'flex min-h-[44px] w-full items-center gap-2 px-4 py-2 text-left text-sm font-medium',
+				'flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left text-sm font-medium',
 				'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
 			)}
 			aria-label="Todos {todos.length} items"

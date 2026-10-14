@@ -56,7 +56,7 @@
 				aria-expanded={open}
 				{disabled}
 				class={cn(
-					'w-full justify-between min-h-[44px] font-normal',
+					'w-full justify-between min-h-11 font-normal',
 					!value && 'text-muted-foreground'
 				)}
 			>
@@ -82,7 +82,7 @@
 						<Command.Item
 							value={model.id}
 							onSelect={() => handleSelect(model.id)}
-							class="flex flex-col items-start gap-0.5 py-2 min-h-[44px]"
+							class="flex flex-col items-start gap-0.5 py-2 min-h-11"
 						>
 							<span class="flex w-full items-center gap-2">
 								<CheckIcon

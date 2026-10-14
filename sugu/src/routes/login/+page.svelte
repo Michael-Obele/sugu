@@ -51,13 +51,13 @@
 					placeholder="Enter passphrase"
 					autocomplete="current-password"
 					disabled={loading}
-					class="min-h-[44px]"
+					class="min-h-11"
 				/>
 			</div>
 			{#if error}
 				<p role="alert" class="text-sm text-destructive">{error}</p>
 			{/if}
-			<Button type="submit" disabled={loading || !passphrase.trim()} class="min-h-[44px] w-full">
+			<Button type="submit" disabled={loading || !passphrase.trim()} class="min-h-11 w-full">
 				{loading ? 'Signing in…' : 'Sign in'}
 			</Button>
 		</form>

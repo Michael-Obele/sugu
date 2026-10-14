@@ -128,7 +128,7 @@
 	<Button
 		variant="outline"
 		onclick={onNew}
-		class="min-h-[44px] w-full justify-center gap-2 border-dashed"
+		class="min-h-11 w-full justify-center gap-2 border-dashed"
 	>
 		<PlusIcon class="size-4" />
 		New session
@@ -157,7 +157,7 @@
 						class={cn(
 							'flex w-full items-center gap-3 rounded-xl border bg-card px-4 py-3 text-left',
 							'hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-							'min-h-[44px]',
+							'min-h-11',
 							activeId === session.id && 'border-primary bg-accent',
 							longPressId === session.id && 'bg-accent'
 						)}
@@ -175,7 +175,7 @@
 										type="button"
 										{...ddProps}
 										onclick={(e) => e.stopPropagation()}
-										class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none shrink-0"
+										class="flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none shrink-0"
 										aria-label="Session actions"
 									>
 										<EllipsisIcon class="size-4" />
@@ -233,7 +233,7 @@
 				<Empty.Description>Create one to start chatting</Empty.Description>
 			</Empty.Header>
 			<Empty.Content>
-				<Button variant="outline" onclick={onNew} class="min-h-[44px]">
+				<Button variant="outline" onclick={onNew} class="min-h-11">
 					<PlusIcon class="size-4" />
 					New session
 				</Button>
@@ -254,7 +254,7 @@
 				bind:value={renameValue}
 				maxlength={60}
 				placeholder="Session title"
-				class="min-h-[44px]"
+				class="min-h-11"
 				aria-label="Session title"
 			/>
 			<div class="flex justify-between text-xs">
@@ -265,13 +265,13 @@
 			</div>
 		</div>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (renameOpen = false)} class="min-h-[44px]"
+			<Button variant="outline" onclick={() => (renameOpen = false)} class="min-h-11"
 				>Cancel</Button
 			>
 			<Button
 				onclick={handleRename}
 				disabled={renameSaving || !renameValue.trim()}
-				class="min-h-[44px]"
+				class="min-h-11"
 			>
 				{renameSaving ? 'Saving…' : 'Save'}
 			</Button>
@@ -289,11 +289,11 @@
 			>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel class="min-h-[44px]">Cancel</AlertDialog.Cancel>
+			<AlertDialog.Cancel class="min-h-11">Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action
 				onclick={handleDelete}
 				disabled={deleteSaving}
-				class="bg-destructive text-destructive-foreground hover:bg-destructive/90 min-h-[44px]"
+				class="bg-destructive text-destructive-foreground hover:bg-destructive/90 min-h-11"
 			>
 				{deleteSaving ? 'Deleting…' : 'Delete'}
 			</AlertDialog.Action>

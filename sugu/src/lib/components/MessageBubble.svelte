@@ -48,7 +48,7 @@
 		<span class="sr-only" aria-live="polite" aria-atomic="true"
 			>{updateAnnounce(text, streaming)}</span
 		>
-		<p class="break-words whitespace-pre-wrap">{text}</p>
+		<p class="wrap-break-word whitespace-pre-wrap">{text}</p>
 		{#if interrupted}
 			<div class="mt-2 flex items-center gap-2">
 				<span class="text-xs text-warning">Interrupted</span>
@@ -56,7 +56,7 @@
 					<button
 						type="button"
 						onclick={onRerun}
-						class="min-h-[44px] min-w-[44px] rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-warning-foreground hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-warning focus-visible:outline-none"
+						class="min-h-11 min-w-11 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-warning-foreground hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-warning focus-visible:outline-none"
 					>
 						Re-run
 					</button>
