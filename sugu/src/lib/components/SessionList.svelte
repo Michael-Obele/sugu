@@ -23,9 +23,17 @@
 		onNew: () => void;
 		activeId?: string | null;
 		onChanged?: () => void;
+		onSelectSession?: () => void;
 	};
 
-	let { sessions, onSelect, onNew, activeId = null, onChanged }: Props = $props();
+	let {
+		sessions,
+		onSelect,
+		onNew,
+		activeId = null,
+		onChanged,
+		onSelectSession
+	}: Props = $props();
 
 	let renameOpen = $state(false);
 	let renameId: string | null = $state(null);
@@ -124,7 +132,7 @@
 	}
 </script>
 
-<div class="flex flex-col gap-2 p-4">
+	<div class="flex flex-col gap-2 p-4">
 	<Button
 		variant="outline"
 		onclick={onNew}
@@ -150,7 +158,10 @@
 					<button
 						type="button"
 						{...props}
-						onclick={() => onSelect(session.id)}
+						onclick={() => {
+							onSelect(session.id);
+							onSelectSession?.();
+						}}
 						ontouchstart={() => startLongPress(session.id)}
 						ontouchend={cancelLongPress}
 						ontouchmove={cancelLongPress}

@@ -81,9 +81,12 @@ export class SessionStore {
 				}
 				// Any user msg echo marks pending as sent
 				if (frame.t === 'msg' && frame.role === 'user') {
-					this.pendingSends = this.pendingSends.map((p) =>
-						p.text === frame.text && p.status === 'pending' ? { ...p, status: 'sent' as const } : p
+					const pendingIndex = this.pendingSends.findIndex(
+						(p) => p.text === frame.text && p.status === 'pending'
 					);
+					if (pendingIndex !== -1) {
+						this.pendingSends = this.pendingSends.filter((_, index) => index !== pendingIndex);
+					}
 				}
 				this.frameState = applyFrame(this.frameState, frame);
 			},
