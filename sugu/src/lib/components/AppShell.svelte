@@ -120,25 +120,13 @@
 	{/if}
 
 	{#if !isDesktop}
-		{#if page.url.pathname.startsWith('/s/')}
-			<div data-slot="session-list" class="hidden" aria-hidden="true">
-				<SessionList
-					sessions={sessionsStore.sessions}
-					activeId={page.params['id'] ?? null}
-					onSelect={handleSelect}
-					onNew={handleNew}
-					onChanged={handleSessionsChanged}
-					onSelectSession={() => (sessionsStore.historySheetOpen = false)}
-				/>
-			</div>
-		{/if}
 		<Sheet.Root bind:open={sessionsStore.historySheetOpen} onOpenChange={handleHistoryOpenChange}>
 			<Sheet.Content side="left" class="w-[min(20rem,calc(100vw-2rem))] gap-0 p-0">
 				<Sheet.Header class="border-b border-border px-4 py-3 pr-14 text-left">
 					<Sheet.Title>Session history</Sheet.Title>
 					<Sheet.Description>Return to a recent chat or start a new one.</Sheet.Description>
 				</Sheet.Header>
-				<div class="min-h-0 flex-1 overflow-y-auto">
+				<div class="min-h-0 flex-1 overflow-y-auto" data-slot="session-list">
 					{#if sessionsStore.error}
 						<div
 							role="alert"
