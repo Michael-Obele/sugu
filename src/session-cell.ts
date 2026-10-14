@@ -222,9 +222,7 @@ export class SessionCell extends DurableObject<Env> {
 
 	private getModel(): string | null {
 		try {
-			const row = this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'model'").one() as unknown as
-				| { value: string }
-				| undefined;
+			const row = this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'model'").one() as unknown as { value: string } | undefined;
 			return row?.value ?? null;
 		} catch {
 			return null;

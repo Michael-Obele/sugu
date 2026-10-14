@@ -265,8 +265,7 @@
 			</div>
 		</div>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (renameOpen = false)} class="min-h-11"
-				>Cancel</Button
+			<Button variant="outline" onclick={() => (renameOpen = false)} class="min-h-11">Cancel</Button
 			>
 			<Button
 				onclick={handleRename}

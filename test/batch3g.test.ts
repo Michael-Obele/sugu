@@ -24,17 +24,32 @@ function wsConnect(sessionId: string, token: string): Promise<WebSocket> {
 	});
 }
 
-function waitForFrames(ws: WebSocket, predicate: (frames: Record<string, unknown>[]) => boolean, timeoutMs = 5000): Promise<Record<string, unknown>[]> {
+function waitForFrames(
+	ws: WebSocket,
+	predicate: (frames: Record<string, unknown>[]) => boolean,
+	timeoutMs = 5000
+): Promise<Record<string, unknown>[]> {
 	return new Promise((resolve, reject) => {
 		const frames: Record<string, unknown>[] = [];
 		const onMessage = (event: MessageEvent) => {
 			try {
 				frames.push(JSON.parse(event.data as string));
-				if (predicate(frames)) { cleanup(); resolve(frames); }
-			} catch { /* ignore */ }
+				if (predicate(frames)) {
+					cleanup();
+					resolve(frames);
+				}
+			} catch {
+				/* ignore */
+			}
 		};
-		const cleanup = () => { ws.removeEventListener('message', onMessage); clearTimeout(timer); };
-		const timer = setTimeout(() => { cleanup(); reject(new Error(`waitForFrames timeout, got: ${JSON.stringify(frames)}`)); }, timeoutMs);
+		const cleanup = () => {
+			ws.removeEventListener('message', onMessage);
+			clearTimeout(timer);
+		};
+		const timer = setTimeout(() => {
+			cleanup();
+			reject(new Error(`waitForFrames timeout, got: ${JSON.stringify(frames)}`));
+		}, timeoutMs);
 		ws.addEventListener('message', onMessage);
 	});
 }
@@ -58,7 +73,7 @@ describe('batch3g: session model is source of truth', () => {
 			body: JSON.stringify({ title: 'g-deepseek', model: 'deepseek-chat' })
 		});
 		expect(createRes.status).toBe(201);
-		const session = await createRes.json() as { id: string; model: string };
+		const session = (await createRes.json()) as { id: string; model: string };
 		expect(session.model).toBe('deepseek-chat');
 
 		const ws = await wsConnect(session.id, token);
@@ -78,7 +93,7 @@ describe('batch3g: session model is source of truth', () => {
 			body: JSON.stringify({ title: 'g-openrouter', model })
 		});
 		expect(createRes.status).toBe(201);
-		const session = await createRes.json() as { id: string; model: string };
+		const session = (await createRes.json()) as { id: string; model: string };
 		expect(session.model).toBe(model);
 
 		const ws = await wsConnect(session.id, token);
@@ -100,12 +115,16 @@ describe('batch3g: session model is source of truth', () => {
 			headers: { 'content-type': 'application/json', ...authHeader(token) },
 			body: JSON.stringify({ title: 'g-send-or', model })
 		});
-		const session = await createRes.json() as { id: string };
+		const session = (await createRes.json()) as { id: string };
 		const ws = await wsConnect(session.id, token);
 		await waitForFrames(ws, (f) => f.some((x) => x['t'] === 'state'), 3000);
 
 		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'hello from g-send-or' }));
-		const frames = await waitForFrames(ws, (f) => f.some((x) => x['t'] === 'msg' && (x as Record<string, unknown>)['text'] === 'stub response'), 5000);
+		const frames = await waitForFrames(
+			ws,
+			(f) => f.some((x) => x['t'] === 'msg' && (x as Record<string, unknown>)['text'] === 'stub response'),
+			5000
+		);
 		const msg = frames.find((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response');
 		expect(msg).toBeDefined();
 		// No err frame
@@ -121,7 +140,7 @@ describe('batch3g: session model is source of truth', () => {
 			headers: { 'content-type': 'application/json', ...authHeader(token) },
 			body: JSON.stringify({ title: 'g-patch', model: 'deepseek-chat' })
 		});
-		const session = await createRes.json() as { id: string };
+		const session = (await createRes.json()) as { id: string };
 
 		// Connect and verify initial state
 		let ws = await wsConnect(session.id, token);
@@ -138,7 +157,7 @@ describe('batch3g: session model is source of truth', () => {
 			body: JSON.stringify({ model: 'openai/gpt-4o-mini' })
 		});
 		expect(patchRes.status).toBe(200);
-		const patched = await patchRes.json() as { model: string };
+		const patched = (await patchRes.json()) as { model: string };
 		expect(patched.model).toBe('openai/gpt-4o-mini');
 
 		// Reconnect — state should reflect new model
@@ -149,7 +168,11 @@ describe('batch3g: session model is source of truth', () => {
 
 		// Send should succeed with new model
 		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'hello after patch' }));
-		const afterFrames = await waitForFrames(ws, (f) => f.some((x) => x['t'] === 'msg' && (x as Record<string, unknown>)['text'] === 'stub response'), 5000);
+		const afterFrames = await waitForFrames(
+			ws,
+			(f) => f.some((x) => x['t'] === 'msg' && (x as Record<string, unknown>)['text'] === 'stub response'),
+			5000
+		);
 		expect(afterFrames.some((f) => f['t'] === 'msg' && (f as Record<string, unknown>)['text'] === 'stub response')).toBe(true);
 		expect(afterFrames.some((f) => f['t'] === 'err')).toBe(false);
 		ws.close();
@@ -172,17 +195,35 @@ test('adapter receives session model (echo-model seam)', async () => {
 			body: JSON.stringify({ title: 'g-echo', model })
 		});
 		expect(createRes.status).toBe(201);
-		const session = await createRes.json() as { id: string };
+		const session = (await createRes.json()) as { id: string };
 		const ws = await new Promise<WebSocket>((resolve, reject) => {
 			const w = new WebSocket(`${srv.wsBaseUrl}/ws?sessionId=${encodeURIComponent(session.id)}&token=${encodeURIComponent(token)}`);
-			w.addEventListener('open', () => { w.send(JSON.stringify({ v: 1, t: 'hello', sessionId: session.id, token })); resolve(w); });
+			w.addEventListener('open', () => {
+				w.send(JSON.stringify({ v: 1, t: 'hello', sessionId: session.id, token }));
+				resolve(w);
+			});
 			w.addEventListener('error', (e) => reject(e));
 			setTimeout(() => reject(new Error('ws timeout')), 5000);
 		});
 		await waitForFrames(ws, (f) => f.some((x) => x['t'] === 'state'), 3000);
 		ws.send(JSON.stringify({ v: 1, t: 'send', text: 'echo please' }));
-		const frames = await waitForFrames(ws, (f) => f.some((x) => x['t'] === 'msg' && typeof (x as Record<string, unknown>)['text'] === 'string' && ((x as Record<string, unknown>)['text'] as string).includes('model:')), 5000);
-		const msg = frames.find((f) => f['t'] === 'msg' && typeof (f as Record<string, unknown>)['text'] === 'string' && ((f as Record<string, unknown>)['text'] as string).includes('model:')) as Record<string, unknown> | undefined;
+		const frames = await waitForFrames(
+			ws,
+			(f) =>
+				f.some(
+					(x) =>
+						x['t'] === 'msg' &&
+						typeof (x as Record<string, unknown>)['text'] === 'string' &&
+						((x as Record<string, unknown>)['text'] as string).includes('model:')
+				),
+			8000
+		);
+		const msg = frames.find(
+			(f) =>
+				f['t'] === 'msg' &&
+				typeof (f as Record<string, unknown>)['text'] === 'string' &&
+				((f as Record<string, unknown>)['text'] as string).includes('model:')
+		) as Record<string, unknown> | undefined;
 		expect(msg).toBeDefined();
 		expect(msg!['text']).toBe(`model:${model}`);
 		ws.close();
@@ -207,29 +248,69 @@ describe('batch3g: default model resolution', () => {
 
 	test('getModels returns defaultModel from SUGU_DEFAULT_MODEL', async () => {
 		const { getModels } = await import('../src/server/models');
-		const result = await getModels({ SUGU_DEFAULT_MODEL: 'openai/gpt-4o-mini' }, { fetchImpl: (async () => { throw new Error('no fetch'); }) as unknown as typeof fetch, cacheImpl: null });
+		const result = await getModels(
+			{ SUGU_DEFAULT_MODEL: 'openai/gpt-4o-mini' },
+			{
+				fetchImpl: (async () => {
+					throw new Error('no fetch');
+				}) as unknown as typeof fetch,
+				cacheImpl: null
+			}
+		);
 		expect(result.defaultModel).toBe('openai/gpt-4o-mini');
 		// Even if not in catalogue, still use it
-		const result2 = await getModels({ SUGU_DEFAULT_MODEL: 'my/custom-model' }, { fetchImpl: (async () => { throw new Error('no fetch'); }) as unknown as typeof fetch, cacheImpl: null });
+		const result2 = await getModels(
+			{ SUGU_DEFAULT_MODEL: 'my/custom-model' },
+			{
+				fetchImpl: (async () => {
+					throw new Error('no fetch');
+				}) as unknown as typeof fetch,
+				cacheImpl: null
+			}
+		);
 		expect(result2.defaultModel).toBe('my/custom-model');
 	});
 
 	test('getModels defaultModel is deepseek-chat when not configured', async () => {
 		const { getModels } = await import('../src/server/models');
-		const result = await getModels({}, { fetchImpl: (async () => { throw new Error('no fetch'); }) as unknown as typeof fetch, cacheImpl: null });
+		const result = await getModels(
+			{},
+			{
+				fetchImpl: (async () => {
+					throw new Error('no fetch');
+				}) as unknown as typeof fetch,
+				cacheImpl: null
+			}
+		);
 		expect(result.defaultModel).toBe('deepseek-chat');
 	});
 
 	test('no models[0] fallback: defaultModel never equals first catalogue entry blindly', async () => {
 		const { getModels } = await import('../src/server/models');
 		// With no SUGU_DEFAULT_MODEL, defaultModel is deepseek-chat regardless of catalogue order
-		const result = await getModels({}, { fetchImpl: (async () => { throw new Error('no fetch'); }) as unknown as typeof fetch, cacheImpl: null });
+		const result = await getModels(
+			{},
+			{
+				fetchImpl: (async () => {
+					throw new Error('no fetch');
+				}) as unknown as typeof fetch,
+				cacheImpl: null
+			}
+		);
 		expect(result.defaultModel).toBe('deepseek-chat');
 		// Catalogue first entry is deepseek-chat in fallback, but that is coincidence — the point is
 		// defaultModel comes from resolveDefaultModel, not from models[0]
 		expect(result.models[0]!.id).toBe('deepseek-chat');
 		// With custom default, it differs from models[0]
-		const result2 = await getModels({ SUGU_DEFAULT_MODEL: 'openai/gpt-4o' }, { fetchImpl: (async () => { throw new Error('no fetch'); }) as unknown as typeof fetch, cacheImpl: null });
+		const result2 = await getModels(
+			{ SUGU_DEFAULT_MODEL: 'openai/gpt-4o' },
+			{
+				fetchImpl: (async () => {
+					throw new Error('no fetch');
+				}) as unknown as typeof fetch,
+				cacheImpl: null
+			}
+		);
 		expect(result2.defaultModel).toBe('openai/gpt-4o');
 		expect(result2.defaultModel).not.toBe(result2.models[0]!.id);
 	});

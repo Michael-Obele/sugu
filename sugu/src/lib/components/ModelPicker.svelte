@@ -55,10 +55,7 @@
 				role="combobox"
 				aria-expanded={open}
 				{disabled}
-				class={cn(
-					'w-full justify-between min-h-11 font-normal',
-					!value && 'text-muted-foreground'
-				)}
+				class={cn('w-full justify-between min-h-11 font-normal', !value && 'text-muted-foreground')}
 			>
 				<span class="truncate text-left">
 					{#if selected}

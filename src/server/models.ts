@@ -769,7 +769,12 @@ export async function getModels(
 		const liveModels = await fetchLiveCatalogue(fetchImpl, url);
 		let models = liveModels;
 		if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
-		const result: CatalogueResult = { models: liveModels, source: 'live', fetchedAt: new Date().toISOString(), defaultModel: resolveDefaultModel(env) };
+		const result: CatalogueResult = {
+			models: liveModels,
+			source: 'live',
+			fetchedAt: new Date().toISOString(),
+			defaultModel: resolveDefaultModel(env)
+		};
 		// For filtered case, we still cache the unfiltered live result, but return filtered
 		// Actually cache the filtered result so subsequent cache hits are already filtered? No — cache unfiltered and filter on read.
 		// Simpler: cache the liveModels unfiltered, return filtered view.

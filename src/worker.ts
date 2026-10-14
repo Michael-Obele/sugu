@@ -243,7 +243,13 @@ export default {
 			const authErr = await requireUserAuth(request, env);
 			if (authErr) return authErr;
 			const result = await getModels(
-				env as unknown as { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string; SUGU_DEFAULT_MODEL?: string }
+				env as unknown as {
+					SUGU_MODELS?: string;
+					SUGU_MODELS_URL?: string;
+					SUGU_MODELS_FILTER?: string;
+					MODEL_STUB?: string;
+					SUGU_DEFAULT_MODEL?: string;
+				}
 			);
 			return json(result);
 		}
