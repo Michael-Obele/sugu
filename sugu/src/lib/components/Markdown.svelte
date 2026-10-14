@@ -19,7 +19,7 @@
 		});
 	}
 
-	// External DOM side effect: enhance <pre> blocks with copy buttons.
+	// External DOM side effect: enhance <pre> blocks with header + copy button.
 	// This is the one legitimate use of $effect — direct DOM manipulation for
 	// third-party-rendered HTML that Svelte does not own.
 	$effect(() => {
@@ -27,37 +27,73 @@
 		void streaming;
 		void copiedIndex;
 		if (!container) return;
-		const pres = container.querySelectorAll('pre');
-		// Remove stale buttons when html changes (more pres than buttons, or fewer)
-		// Simplest: ensure each pre has exactly one button, recreate if html changed
+		const pres = Array.from(container.querySelectorAll('pre')) as HTMLPreElement[];
+		// Wrap any unwrapped <pre> into header + scroll structure so the copy
+		// button never overlaps code and long lines scroll inside their container.
 		pres.forEach((pre, idx) => {
-			let btn = pre.querySelector('[data-copy-btn]') as HTMLButtonElement | null;
+			if (pre.dataset.enhanced === 'true') return;
 			const codeEl = pre.querySelector('code');
 			const codeText = codeEl?.textContent ?? pre.textContent ?? '';
-			if (!btn) {
-				pre.style.position = 'relative';
-				btn = document.createElement('button');
-				btn.setAttribute('data-copy-btn', String(idx));
-				btn.className =
-					'absolute right-2 top-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
-				pre.appendChild(btn);
+			const langMatch = codeEl?.className.match(/language-([\w-]+)/);
+			const lang = langMatch?.[1] ?? '';
+			const wrapper = document.createElement('div');
+			wrapper.setAttribute('data-code-block', String(idx));
+			wrapper.className =
+				'my-2 max-w-full min-w-0 overflow-hidden rounded-md border border-border bg-muted';
+			const header = document.createElement('div');
+			header.setAttribute('data-code-header', '');
+			header.className =
+				'flex items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1';
+			const langEl = document.createElement('span');
+			langEl.setAttribute('data-lang', lang);
+			langEl.className = 'text-xs font-mono text-muted-foreground';
+			langEl.textContent = lang || 'code';
+			const btn = document.createElement('button');
+			btn.setAttribute('data-copy-btn', String(idx));
+			btn.setAttribute('data-code-text', codeText);
+			btn.className =
+				'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+			header.append(langEl, btn);
+			const scroll = document.createElement('div');
+			scroll.setAttribute('data-code-scroll', '');
+			scroll.className = 'max-w-full overflow-x-auto p-3';
+			pre.className = 'm-0 !bg-transparent !p-0 font-mono text-sm';
+			pre.style.overflow = 'visible';
+			pre.style.position = '';
+			pre.style.backgroundColor = 'transparent';
+			pre.style.padding = '0';
+			pre.style.margin = '0';
+			if (codeEl) {
+				codeEl.className = '!bg-transparent !p-0 font-mono text-sm whitespace-pre';
+				(codeEl as HTMLElement).style.backgroundColor = 'transparent';
+			} else {
+				pre.style.whiteSpace = 'pre';
 			}
-			// Update click handler with fresh codeText
+			pre.dataset.enhanced = 'true';
+			pre.parentNode?.insertBefore(wrapper, pre);
+			wrapper.append(header, scroll);
+			scroll.appendChild(pre);
+		});
+		// Update all copy buttons for current copiedIndex (label, icon, handler)
+		const wrappers = container.querySelectorAll('[data-code-block]');
+		wrappers.forEach((wrapper, idx) => {
+			const btn = wrapper.querySelector('[data-copy-btn]') as HTMLButtonElement | null;
+			const pre = wrapper.querySelector('pre');
+			const codeEl = pre?.querySelector('code');
+			const codeText =
+				codeEl?.textContent ?? pre?.textContent ?? btn?.getAttribute('data-code-text') ?? '';
+			if (!btn) return;
+			btn.setAttribute('data-code-text', codeText);
 			const fresh = btn.cloneNode(true) as HTMLButtonElement;
 			btn.replaceWith(fresh);
-			btn = fresh;
-			btn.addEventListener('click', () => handleCopy(idx, codeText));
+			const newBtn = fresh;
+			newBtn.addEventListener('click', () => handleCopy(idx, codeText));
 			const isCopied = copiedIndex === idx;
-			btn.setAttribute('aria-label', isCopied ? 'Copied!' : 'Copy code');
-			btn.setAttribute('data-copied', String(isCopied));
-			btn.innerHTML = isCopied
+			newBtn.setAttribute('aria-label', isCopied ? 'Copied!' : 'Copy code');
+			newBtn.setAttribute('data-copied', String(isCopied));
+			newBtn.innerHTML = isCopied
 				? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
 				: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
-		});
-		// Remove buttons from pres that no longer exist (if html shrank)
-		container.querySelectorAll('[data-copy-btn]').forEach((btn) => {
-			const idx = Number(btn.getAttribute('data-copy-btn'));
-			if (idx >= pres.length) btn.remove();
 		});
 	});
 </script>
