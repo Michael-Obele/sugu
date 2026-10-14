@@ -9,6 +9,7 @@
 	import { activeTrigger } from '$lib/composer-triggers';
 	import { getCommand, commandInsertText, parseCommand } from '$lib/commands';
 	import { detailLevelStore } from '$lib/detail-level.svelte';
+	import { thinkingStore } from '$lib/thinking.svelte';
 	import type { SkillInfo } from '$lib/api';
 
 	type Props = {
@@ -268,6 +269,7 @@
 		bind:open={commandOpen}
 		bind:query={commandQuery}
 		detailLevel={detailLevelStore.level}
+		thinkingMode={thinkingStore.mode}
 		onSelect={handleCommandSelect}
 		onOpenChange={handleCommandOpenChange}
 	/>

@@ -44,6 +44,7 @@ export class SessionCell extends DurableObject<Env> {
 	// assistant reserve (1) + assistant update (1) = 3 writes/turn (limit 8).
 	private pendingSeq: number | null = null;
 	private pendingText = '';
+	private pendingReasoning = '';
 	private pendingAssistantId: number | null = null;
 	private activeWs: WebSocket | null = null;
 
@@ -331,9 +332,11 @@ export class SessionCell extends DurableObject<Env> {
 		await new Promise<void>((r) => queueMicrotask(() => r()));
 		if (this.pendingAssistantId !== null) {
 			try {
+				const abortPayload: Record<string, unknown> = { text: this.pendingText };
+				if (this.pendingReasoning) abortPayload['reasoning'] = this.pendingReasoning;
 				this.ctx.storage.sql.exec(
 					'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
-					JSON.stringify({ text: this.pendingText }),
+					JSON.stringify(abortPayload),
 					JSON.stringify({ interrupted: true }),
 					this.pendingAssistantId
 				);
@@ -343,6 +346,7 @@ export class SessionCell extends DurableObject<Env> {
 			this.busy = false;
 			this.pendingSeq = null;
 			this.pendingText = '';
+			this.pendingReasoning = '';
 			this.pendingAssistantId = null;
 			this.abortCtrl = null;
 		}
@@ -474,6 +478,7 @@ export class SessionCell extends DurableObject<Env> {
 		this.pendingSeq = nextSeq;
 		this.pendingAssistantId = nextSeq;
 		this.pendingText = '';
+		this.pendingReasoning = '';
 		// Server-authoritative busy: every socket learns a turn is running (finding 1).
 		try {
 			try {
@@ -620,6 +625,20 @@ export class SessionCell extends DurableObject<Env> {
 						this.pendingText = finalText;
 						try {
 							ws.send(JSON.stringify({ v: 1, t: 'token', seq: nextSeq, delta }));
+						} catch {
+							this.abortCtrl?.abort();
+							break;
+						}
+					}
+					if ((chunk as { reasoning?: string }).reasoning) {
+						let rDelta = (chunk as { reasoning: string }).reasoning;
+						if (this.pendingReasoning.length + rDelta.length > 16000) {
+							rDelta = rDelta.slice(0, 16000 - this.pendingReasoning.length - 14) + '…[truncated]';
+						}
+						if (rDelta.length === 0) continue;
+						this.pendingReasoning += rDelta;
+						try {
+							ws.send(JSON.stringify({ v: 1, t: 'token', seq: nextSeq, delta: rDelta, kind: 'reasoning' }));
 						} catch {
 							this.abortCtrl?.abort();
 							break;
@@ -818,30 +837,33 @@ export class SessionCell extends DurableObject<Env> {
 
 		if (signal.aborted) {
 			// Update reserved row with partial text, still interrupted
+			const abortPayload: Record<string, unknown> = { text: this.pendingText };
+			if (this.pendingReasoning) abortPayload['reasoning'] = this.pendingReasoning;
 			this.ctx.storage.sql.exec(
 				'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
-				JSON.stringify({ text: this.pendingText }),
+				JSON.stringify(abortPayload),
 				JSON.stringify({ interrupted: true }),
 				this.pendingAssistantId
 			);
 			try {
-				ws.send(
-					JSON.stringify({
-						v: 1,
-						t: 'msg',
-						seq: this.pendingAssistantId,
-						id: this.pendingAssistantId,
-						role: 'assistant',
-						text: this.pendingText,
-						interrupted: true
-					})
-				);
+				const abortMsgFrame: Record<string, unknown> = {
+					v: 1,
+					t: 'msg',
+					seq: this.pendingAssistantId,
+					id: this.pendingAssistantId,
+					role: 'assistant',
+					text: this.pendingText,
+					interrupted: true
+				};
+				if (this.pendingReasoning) abortMsgFrame['reasoning'] = this.pendingReasoning;
+				ws.send(JSON.stringify(abortMsgFrame));
 			} catch {
 				// socket gone
 			}
 			this.busy = false;
 			this.pendingSeq = null;
 			this.pendingText = '';
+			this.pendingReasoning = '';
 			this.pendingAssistantId = null;
 			this.abortCtrl = null;
 			if (this.activeWs === ws) this.activeWs = null;
@@ -856,9 +878,11 @@ export class SessionCell extends DurableObject<Env> {
 		if (modelError) {
 			// Model failure: persist partial (if any) as interrupted, send err, clear busy
 			const textToPersist = finalText || this.pendingText;
+			const errPayload: Record<string, unknown> = { text: textToPersist };
+			if (this.pendingReasoning) errPayload['reasoning'] = this.pendingReasoning;
 			this.ctx.storage.sql.exec(
 				'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
-				JSON.stringify({ text: textToPersist }),
+				JSON.stringify(errPayload),
 				JSON.stringify({ interrupted: true }),
 				this.pendingAssistantId
 			);
@@ -887,6 +911,7 @@ export class SessionCell extends DurableObject<Env> {
 			this.busy = false;
 			this.pendingSeq = null;
 			this.pendingText = '';
+			this.pendingReasoning = '';
 			this.pendingAssistantId = null;
 			this.abortCtrl = null;
 			if (this.activeWs === ws) this.activeWs = null;
@@ -901,31 +926,34 @@ export class SessionCell extends DurableObject<Env> {
 		// Success: persist final text, interrupted:false — then busy=false (order matters: see reservation comment)
 		// AR-8: truncate final if needed
 		if (finalText.length > 16000) finalText = finalText.slice(0, 15970) + '…[truncated]';
+		const payloadToStore: Record<string, unknown> = { text: finalText };
+		if (this.pendingReasoning) payloadToStore['reasoning'] = this.pendingReasoning;
 		this.ctx.storage.sql.exec(
 			'UPDATE events SET payload = ?, meta = ? WHERE id = ?',
-			JSON.stringify({ text: finalText }),
+			JSON.stringify(payloadToStore),
 			JSON.stringify({ interrupted: false }),
 			this.pendingAssistantId
 		);
 		// Record usage: one upsert per turn (AR-6: ≤8 row-writes/turn)
 		this.recordUsage(promptTokens, completionTokens, costUsd);
 		try {
-			ws.send(
-				JSON.stringify({
-					v: 1,
-					t: 'msg',
-					seq: this.pendingAssistantId,
-					id: this.pendingAssistantId,
-					role: 'assistant',
-					text: finalText
-				})
-			);
+			const msgFrame: Record<string, unknown> = {
+				v: 1,
+				t: 'msg',
+				seq: this.pendingAssistantId,
+				id: this.pendingAssistantId,
+				role: 'assistant',
+				text: finalText
+			};
+			if (this.pendingReasoning) msgFrame['reasoning'] = this.pendingReasoning;
+			ws.send(JSON.stringify(msgFrame));
 		} catch {
 			// socket gone
 		}
 		this.busy = false;
 		this.pendingSeq = null;
 		this.pendingText = '';
+		this.pendingReasoning = '';
 		this.pendingAssistantId = null;
 		this.abortCtrl = null;
 		if (this.activeWs === ws) this.activeWs = null;
@@ -1070,6 +1098,9 @@ function eventRowToFrame(row: {
 				}
 			}
 			if (interrupted) msg['interrupted'] = true;
+			if (typeof payload['reasoning'] === 'string' && (payload['reasoning'] as string).length > 0) {
+				msg['reasoning'] = payload['reasoning'];
+			}
 			return msg;
 		}
 		case 'tool': {

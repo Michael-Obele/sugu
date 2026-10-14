@@ -45,6 +45,11 @@ export const COMMANDS: CommandDef[] = [
 		keywords: ['commands', '?']
 	},
 	{
+		name: 'thinking',
+		description: 'Toggle reasoning visibility',
+		keywords: ['reasoning', 'thought', 'think', 'chain']
+	},
+	{
 		name: 'todo',
 		description: 'Add a todo item — /todo <text>',
 		takesArg: true,

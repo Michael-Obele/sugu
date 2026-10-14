@@ -26,6 +26,7 @@
 			error?: string;
 		}[];
 		detailLevel?: 'compact' | 'full';
+		thinkingMode?: 'show' | 'hide';
 		hasMore?: boolean;
 		loadingEarlier?: boolean;
 		onLoadEarlier?: () => void;
@@ -40,6 +41,7 @@
 		errs = [],
 		pendingSends = [],
 		detailLevel = 'compact',
+		thinkingMode = 'show',
 		hasMore = false,
 		loadingEarlier = false,
 		onLoadEarlier,
@@ -108,6 +110,43 @@
 				<MessageScroller.Content class="gap-3">
 					{#each messages as msg (msg.seq)}
 						<MessageScroller.Item>
+							{#if thinkingMode === 'show' && msg.role === 'assistant' && (msg.reasoning || msg.reasoningStreaming)}
+								<Collapsible.Root class="w-full">
+									<Collapsible.Trigger
+										class={cn(
+											'flex min-h-11 w-full items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-left text-sm text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+										)}
+										aria-label="Reasoning"
+									>
+										<span class="text-xs font-medium">Thinking</span>
+										{#if msg.reasoningStreaming && !msg.text}
+											<Spinner class="size-3" />
+											<span class="text-xs text-muted-foreground">thinking…</span>
+										{:else if msg.reasoningStreaming}
+											<Spinner class="size-3" />
+										{/if}
+										<ChevronDownIcon
+											class="ml-auto size-4 shrink-0 opacity-50 transition-transform group-data-[state=open]/collapsible:rotate-180"
+										/>
+									</Collapsible.Trigger>
+									<Collapsible.Content
+										class="mt-1 rounded-md border border-border bg-muted/30 p-3 text-sm"
+									>
+										<pre
+											class="wrap-break-word whitespace-pre-wrap border-l-2 border-muted-foreground/20 pl-3 text-xs leading-relaxed text-muted-foreground italic">{msg.reasoning ??
+												''}{#if msg.reasoningStreaming}<span
+													class="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-muted-foreground/30 align-text-bottom"
+													aria-hidden="true"></span>{/if}</pre>
+									</Collapsible.Content>
+								</Collapsible.Root>
+							{:else if thinkingMode === 'show' && msg.role === 'assistant' && msg.reasoningStreaming && !msg.reasoning && !msg.text}
+								<div
+									class="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground"
+								>
+									<Spinner class="size-3" />
+									<span class="text-xs">Thinking…</span>
+								</div>
+							{/if}
 							<Message.Root align={msg.role === 'user' ? 'end' : 'start'}>
 								<Bubble.Root
 									variant={msg.role === 'user'

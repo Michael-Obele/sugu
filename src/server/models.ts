@@ -354,7 +354,7 @@ async function* streamFromSse(
 	response: Response,
 	signal: AbortSignal,
 	model: string
-): AsyncIterable<{ delta?: string; toolCall?: ToolCall; usage?: Usage }> {
+): AsyncIterable<{ delta?: string; reasoning?: string; toolCall?: ToolCall; usage?: Usage }> {
 	if (!response.ok) {
 		const text = await response.text().catch(() => '');
 		throw new Error(`model provider ${response.status}: ${text.slice(0, 500)}`);
@@ -380,6 +380,11 @@ async function* streamFromSse(
 				const content = delta['content'];
 				if (typeof content === 'string' && content.length > 0) {
 					yield { delta: content };
+				}
+				// Reasoning: delta.reasoning is the canonical field; reasoning_content is a documented alias (DeepSeek direct)
+				const reasoningRaw = (delta['reasoning'] ?? delta['reasoning_content']) as unknown;
+				if (typeof reasoningRaw === 'string' && reasoningRaw.length > 0) {
+					yield { reasoning: reasoningRaw };
 				}
 				const toolCalls = delta['tool_calls'] as Array<Record<string, unknown>> | undefined;
 				if (toolCalls) {
@@ -463,7 +468,7 @@ export class StubAdapter implements ModelAdapter {
 	async *stream(
 		req: { model: string; messages: Msg[]; tools?: ToolDef[]; maxTokens?: number },
 		signal: AbortSignal
-	): AsyncIterable<{ delta?: string; toolCall?: ToolCall; usage?: Usage }> {
+	): AsyncIterable<{ delta?: string; reasoning?: string; toolCall?: ToolCall; usage?: Usage }> {
 		if (this.opts?.fail) {
 			throw new Error('stub model failure');
 		}
@@ -483,6 +488,38 @@ export class StubAdapter implements ModelAdapter {
 		// Or use MODEL_STUB_TOOL env var for more control.
 		// Also check if text looks like tool calls (for test injection via env)
 		const text = this.opts?.text ?? 'stub response';
+		// Reasoning seam for tests: MODEL_STUB_TEXT="REASONING:think text|TEXT:answer text"
+		// or "REASONING:think text" alone. Supports deterministic reasoning streaming.
+		if (text.includes('REASONING:')) {
+			// Parse REASONING: and TEXT: segments split by "|"
+			const segments = text.split('|');
+			let reasoningText: string | null = null;
+			let answerText: string | null = null;
+			for (const seg of segments) {
+				if (seg.startsWith('REASONING:')) reasoningText = seg.slice('REASONING:'.length);
+				else if (seg.startsWith('TEXT:')) answerText = seg.slice('TEXT:'.length);
+				else if (seg.startsWith('TOOL:')) {
+					/* handled below, skip reasoning path */ reasoningText = null;
+					break;
+				}
+			}
+			if (reasoningText !== null) {
+				const rChunk = 5;
+				for (let i = 0; i < reasoningText.length; i += rChunk) {
+					if (signal.aborted) break;
+					yield { reasoning: reasoningText.slice(i, i + rChunk) };
+					await new Promise<void>((r) => setTimeout(r, 5));
+				}
+				const finalAnswer = answerText ?? 'stub response';
+				for (let i = 0; i < finalAnswer.length; i += 5) {
+					if (signal.aborted) break;
+					yield { delta: finalAnswer.slice(i, i + 5) };
+					await new Promise<void>((r) => setTimeout(r, 5));
+				}
+				if (!signal.aborted) yield { usage: { promptTokens: 10, completionTokens: finalAnswer.length, costUsd: 0 } };
+				return;
+			}
+		}
 		// If text starts with "TOOL:", parse as tool calls
 		if (text.startsWith('TOOL:')) {
 			// If this is a follow-up call after a tool (messages contain tool result), yield final text only

@@ -68,7 +68,8 @@ const TokenFrame = v.strictObject({
 	v: v.literal(1),
 	t: v.literal('token'),
 	seq: v.number(),
-	delta: v.string()
+	delta: v.string(),
+	kind: v.optional(v.picklist(['text', 'reasoning']))
 });
 
 const MsgFrame = v.strictObject({
@@ -78,7 +79,8 @@ const MsgFrame = v.strictObject({
 	id: v.number(),
 	role: v.picklist(['user', 'assistant', 'system']),
 	text: v.string(),
-	interrupted: v.optional(v.boolean())
+	interrupted: v.optional(v.boolean()),
+	reasoning: v.optional(v.string())
 });
 
 const ToolFrame = v.strictObject({

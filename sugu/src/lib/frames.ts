@@ -10,6 +10,8 @@ export type DisplayMessage = {
 	id: number;
 	role: 'user' | 'assistant' | 'system';
 	text: string;
+	reasoning?: string;
+	reasoningStreaming?: boolean;
 	interrupted?: boolean;
 	streaming?: boolean;
 };
@@ -59,9 +61,21 @@ export type FrameState = {
 export function applyFrame(state: FrameState, frame: Frame): FrameState {
 	switch (frame.t) {
 		case 'token': {
+			const kind = (frame as unknown as { kind?: string }).kind;
+			const isReasoning = kind === 'reasoning';
 			const existing = state.messages.find((m) => m.seq === frame.seq);
 			if (existing) {
-				// Append to existing streaming bubble
+				if (isReasoning) {
+					return {
+						...state,
+						messages: state.messages.map((m) =>
+							m.seq === frame.seq
+								? { ...m, reasoning: (m.reasoning ?? '') + frame.delta, reasoningStreaming: true }
+								: m
+						)
+					};
+				}
+				// Append to existing streaming bubble (text)
 				return {
 					...state,
 					messages: state.messages.map((m) =>
@@ -70,6 +84,21 @@ export function applyFrame(state: FrameState, frame: Frame): FrameState {
 				};
 			}
 			// New streaming bubble for this seq
+			if (isReasoning) {
+				const msg: DisplayMessage = {
+					seq: frame.seq,
+					id: frame.seq,
+					role: 'assistant',
+					text: '',
+					reasoning: frame.delta,
+					reasoningStreaming: true,
+					streaming: false
+				};
+				return {
+					...state,
+					messages: insertBySeq(state.messages, msg)
+				};
+			}
 			const msg: DisplayMessage = {
 				seq: frame.seq,
 				id: frame.seq,
@@ -83,17 +112,20 @@ export function applyFrame(state: FrameState, frame: Frame): FrameState {
 			};
 		}
 		case 'msg': {
+			const raw = frame as unknown as { reasoning?: string };
 			const msg: DisplayMessage = {
 				seq: frame.seq,
 				id: frame.id,
 				role: frame.role,
 				text: frame.text,
+				reasoning: raw.reasoning,
+				reasoningStreaming: false,
 				interrupted: frame.interrupted,
 				streaming: false
 			};
 			const existing = state.messages.find((m) => m.seq === frame.seq);
 			if (existing) {
-				// Replace the streaming bubble with persisted text
+				// Replace the streaming bubble with persisted text (and reasoning)
 				return {
 					...state,
 					messages: state.messages.map((m) => (m.seq === frame.seq ? msg : m))

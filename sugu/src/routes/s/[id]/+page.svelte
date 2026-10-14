@@ -17,6 +17,7 @@
 	import { sessionStore } from '$lib/session.svelte';
 	import { COMMANDS } from '$lib/commands';
 	import { detailLevelStore } from '$lib/detail-level.svelte';
+	import { thinkingStore } from '$lib/thinking.svelte';
 	import { applyFrame } from '$lib/frames';
 	import type { Frame } from '../../../../../src/shared/contracts';
 
@@ -70,6 +71,7 @@
 
 	let showHelpDialog = $state(false);
 	let detailLevel = $derived(detailLevelStore.level);
+	let thinkingMode = $derived(thinkingStore.mode);
 
 	async function loadSkills(): Promise<void> {
 		try {
@@ -277,6 +279,10 @@
 	}
 
 	async function handleCommand(name: string, args: string): Promise<void> {
+		if (name === 'thinking') {
+			thinkingStore.toggle();
+			return;
+		}
 		if (name === 'details') {
 			detailLevelStore.toggle();
 			return;
@@ -423,6 +429,7 @@
 		messages={sessionStore.messages}
 		tools={sessionStore.tools}
 		{detailLevel}
+		{thinkingMode}
 		errs={sessionStore.errs}
 		pendingSends={sessionStore.pendingSends}
 		{hasMore}

@@ -3,7 +3,7 @@ import { COMMANDS, commandInsertText, filterCommands, getCommand, isKnownCommand
 
 describe('COMMANDS registry', () => {
 	test('exposes the batch 3F vocabulary in value order', () => {
-		expect(COMMANDS.map((c) => c.name)).toEqual(['details', 'models', 'sessions', 'new', 'export', 'help', 'todo']);
+		expect(COMMANDS.map((c) => c.name)).toEqual(['details', 'models', 'sessions', 'new', 'export', 'help', 'thinking', 'todo']);
 	});
 
 	test('every command has a one-line description', () => {

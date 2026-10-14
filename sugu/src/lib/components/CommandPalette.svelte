@@ -9,12 +9,14 @@
 	import CommandMenu from '$lib/components/CommandMenu.svelte';
 	import { filterCommands, type CommandDef } from '$lib/commands';
 	import { detailLevelHint, type DetailLevel } from '$lib/detail-level';
+	import { thinkingModeHint, type ThinkingMode } from '$lib/thinking';
 	import SlashIcon from '@lucide/svelte/icons/slash';
 
 	type Props = {
 		open?: boolean;
 		query?: string;
 		detailLevel?: DetailLevel;
+		thinkingMode?: ThinkingMode;
 		onSelect?: (name: string) => void;
 		onOpenChange?: (open: boolean) => void;
 	};
@@ -23,15 +25,17 @@
 		open = $bindable(false),
 		query = $bindable(''),
 		detailLevel = 'compact',
+		thinkingMode = 'show',
 		onSelect,
 		onOpenChange
 	}: Props = $props();
 
 	let filtered = $derived(filterCommands(query));
 
-	/** `/details` describes what the toggle will do next, not what it is. */
 	function describe(cmd: CommandDef): string {
-		return cmd.name === 'details' ? detailLevelHint(detailLevel) : cmd.description;
+		if (cmd.name === 'details') return detailLevelHint(detailLevel);
+		if (cmd.name === 'thinking') return thinkingModeHint(thinkingMode);
+		return cmd.description;
 	}
 
 	function handleSelect(name: string): void {
