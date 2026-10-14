@@ -1,12 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { afterNavigate } from '$app/navigation';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import {
 		getToken,
 		setOnUnauthorized,
-		listSessions,
 		getEventsPage,
 		getModels,
 		getSkills,
@@ -14,23 +12,22 @@
 		exportSession,
 		downloadJsonl
 	} from '$lib/api';
-	import type { ModelInfo, SessionMeta, SkillInfo } from '$lib/api';
+	import type { ModelInfo, SkillInfo } from '$lib/api';
 	import { sessionStore } from '$lib/session.svelte';
+	import { sessionsStore } from '$lib/sessions.svelte';
+	import { viewport, sidebarState } from '$lib/viewport.svelte';
 	import { COMMANDS } from '$lib/commands';
 	import { detailLevelStore } from '$lib/detail-level.svelte';
 	import { thinkingStore } from '$lib/thinking.svelte';
 	import { applyFrame } from '$lib/frames';
 	import type { Frame } from '../../../../../src/shared/contracts';
-
 	import ConnectionBanner from '$lib/components/ConnectionBanner.svelte';
 	import MessageList from '$lib/components/MessageList.svelte';
 	import Composer from '$lib/components/Composer.svelte';
 	import TodoPanel from '$lib/components/TodoPanel.svelte';
-	import SessionList from '$lib/components/SessionList.svelte';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as Sheet from '$lib/components/ui/sheet/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -39,19 +36,14 @@
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis-vertical';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import DownloadIcon from '@lucide/svelte/icons/download';
-	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import PanelLeftIcon from '@lucide/svelte/icons/panel-left';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import PanelLeftCloseIcon from '@lucide/svelte/icons/panel-left-close';
 
 	let sessionId = $derived(page.params['id'] ?? '');
 	let composerText = $state('');
 	let pendingSend = $state<string | null>(null);
 	let lastConnectedId: string | null = null;
 	let previousSessionId: string | null = null;
-	let sessions = $state<SessionMeta[]>([]);
-	let sessionsLoading = $state(true);
-	let sessionsError = $state<string | null>(null);
-	let historyOpen = $state(false);
 
 	let hasMore = $state(false);
 	let loadingEarlier = $state(false);
@@ -82,6 +74,9 @@
 	let detailLevel = $derived(detailLevelStore.level);
 	let thinkingMode = $derived(thinkingStore.mode);
 
+	let isDesktop = $derived(viewport.isDesktop);
+	let collapsed = $derived(sidebarState.collapsed);
+
 	async function loadSkills(): Promise<void> {
 		try {
 			const res = await getSkills();
@@ -93,46 +88,8 @@
 		}
 	}
 
-	async function loadSessions(): Promise<boolean> {
-		sessionsLoading = true;
-		try {
-			sessions = await listSessions();
-			sessions.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-			sessionsError = null;
-			return true;
-		} catch (e) {
-			const err = e as { status?: number; message?: string };
-			if (err.status === 401) {
-				goto(`/login?redirect=${encodeURIComponent(`/s/${sessionId}`)}`);
-				return false;
-			}
-			sessionsError = err.message ?? 'Failed to load sessions';
-			return false;
-		} finally {
-			sessionsLoading = false;
-		}
-	}
-
-	function handleSelectSession(id: string): void {
-		if (id === sessionId) {
-			historyOpen = false;
-			return;
-		}
-		goto(`/s/${id}`);
-	}
-
-	function handleNewSession(): void {
-		historyOpen = false;
-		goto('/');
-	}
-
-	async function handleSessionsChanged(): Promise<void> {
-		if (!(await loadSessions())) return;
-		if (!sessions.some((session) => session.id === sessionId)) {
-			// The selected session was deleted; do not leave the chat connected.
-			sessionStore.disconnect();
-			goto('/');
-		}
+	function toggleCollapse(): void {
+		sidebarState.toggle();
 	}
 
 	function doConnect(id: string): void {
@@ -146,19 +103,13 @@
 		sessionStore.connect(id, flushPending, (text) => {
 			composerText = text;
 		});
-		// Check if history is paginated — fetch hasMore for initial page
 		checkHasMore(id);
 		loadQuota();
 	}
 
 	async function checkHasMore(id: string): Promise<void> {
 		try {
-			const page = await getEventsPage(id, { limit: 50 });
-			// If we have fewer messages than the page, there might be more
-			// Actually hasMore from the API tells us if there are older events
-			// We need to compare: if current messages length < total, hasMore true
-			// Simpler: if the page has hasMore, show button
-			// But we already have messages via WS — use the API's hasMore with before=minSeq
+			const pg = await getEventsPage(id, { limit: 50 });
 			const minSeq =
 				sessionStore.messages.length > 0
 					? Math.min(...sessionStore.messages.map((m) => m.seq))
@@ -167,7 +118,7 @@
 				const older = await getEventsPage(id, { before: minSeq, limit: 1 });
 				hasMore = older.frames.length > 0 || older.hasMore;
 			} else {
-				hasMore = page.hasMore;
+				hasMore = pg.hasMore;
 			}
 		} catch {
 			hasMore = false;
@@ -181,7 +132,7 @@
 			const res = await fetch('/api/quota', { headers: { Authorization: `Bearer ${token}` } });
 			if (res.ok) quota = await res.json();
 		} catch {
-			// ignore
+			/* ignore */
 		}
 	}
 
@@ -195,14 +146,13 @@
 		loadingEarlier = true;
 		try {
 			const pageData = await getEventsPage(sessionId, { before: minSeq, limit: 50 });
-			// Prepend older frames — apply each frame to the store
 			for (const raw of pageData.frames) {
 				const frame = raw as Frame;
 				sessionStore.frameState = applyFrame(sessionStore.frameState, frame);
 			}
 			hasMore = pageData.hasMore;
 		} catch {
-			// ignore
+			/* ignore */
 		} finally {
 			loadingEarlier = false;
 		}
@@ -225,8 +175,7 @@
 		}
 		setOnUnauthorized(() => goto(`/login?redirect=${encodeURIComponent(`/s/${sessionId}`)}`));
 		doConnect(sessionId);
-		loadSkills();
-
+		void loadSkills();
 		return () => {
 			sessionStore.disconnect();
 			lastConnectedId = null;
@@ -237,15 +186,11 @@
 		const id = page.params['id'] ?? '';
 		if (id && id !== previousSessionId) {
 			previousSessionId = id;
-			void loadSessions();
 		}
-		if (id && id !== lastConnectedId) {
-			doConnect(id);
-		}
+		if (id && id !== lastConnectedId) doConnect(id);
 	});
 
 	function handleSend(text: string, skills?: string[]): void {
-		// Local /todo affordance — handle before any network
 		const todoParsed = sessionStore.parseTodoCommand(text);
 		if (todoParsed.isTodo && todoParsed.todoText) {
 			sessionStore.addLocalTodo(text);
@@ -261,32 +206,26 @@
 		sessionStore.send(text, toSend.length > 0 ? toSend : undefined);
 		selectedSkills = [];
 	}
-
 	function handleCancel(): void {
 		sessionStore.cancel();
 	}
-
 	function handleRerun(text: string): void {
 		handleSend(text);
 	}
-
 	function handleRetryPending(id: string): void {
 		sessionStore.retryPending(id);
 	}
-
 	function handleDismissPending(id: string): void {
 		sessionStore.dismissPending(id);
 	}
-
 	async function handleExport(): Promise<void> {
 		try {
 			const text = await exportSession(sessionId);
 			downloadJsonl(`${sessionId}.jsonl`, text);
 		} catch {
-			// ignore
+			/* ignore */
 		}
 	}
-
 	async function openModelPicker(): Promise<void> {
 		showModelDialog = true;
 		selectedModel = sessionStore.frameState.model || 'deepseek-chat';
@@ -295,10 +234,9 @@
 			models = res.models;
 			modelsSource = res.source;
 		} catch {
-			// keep fallback
+			/* ignore */
 		}
 	}
-
 	async function handleModelChange(): Promise<void> {
 		if (!selectedModel) return;
 		savingModel = true;
@@ -307,17 +245,15 @@
 			sessionStore.frameState = { ...sessionStore.frameState, model: selectedModel };
 			showModelDialog = false;
 		} catch {
-			// ignore
+			/* ignore */
 		} finally {
 			savingModel = false;
 		}
 	}
-
 	function openRename(): void {
 		renameValue = sessionId.slice(0, 60);
 		showRenameDialog = true;
 	}
-
 	async function handleRename(): Promise<void> {
 		const trimmed = renameValue.trim();
 		if (!trimmed) return;
@@ -325,14 +261,13 @@
 		try {
 			await patchSession(sessionId, { title: trimmed.slice(0, 60) });
 			showRenameDialog = false;
-			void loadSessions();
+			void sessionsStore.load();
 		} catch {
-			// ignore
+			/* ignore */
 		} finally {
 			renameSaving = false;
 		}
 	}
-
 	async function handleCommand(name: string, args: string): Promise<void> {
 		if (name === 'thinking') {
 			thinkingStore.toggle();
@@ -363,9 +298,7 @@
 			return;
 		}
 		if (name === 'todo') {
-			if (args) {
-				sessionStore.addLocalTodo(`/todo ${args}`);
-			}
+			if (args) sessionStore.addLocalTodo(`/todo ${args}`);
 			return;
 		}
 	}
@@ -380,9 +313,8 @@
 					: 'Offline'
 	);
 	let sessionTitle = $derived(
-		sessions.find((session) => session.id === sessionId)?.title || sessionId.slice(0, 8)
+		sessionsStore.sessions.find((s) => s.id === sessionId)?.title || sessionId.slice(0, 8)
 	);
-
 	let statusLine = $derived.by(() => {
 		const parts: string[] = [];
 		if (sessionStore.frameState.model) parts.push(sessionStore.frameState.model);
@@ -392,288 +324,215 @@
 	});
 </script>
 
-<div class="flex h-dvh flex-col bg-background md:flex-row">
-	<aside
-		class="hidden h-dvh w-72 shrink-0 flex-col border-r border-border bg-card/40 md:flex lg:w-80"
-	>
-		<div class="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-			<a
-				href="/"
-				class="text-lg font-semibold tracking-tight focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-				>Sugu</a
+<div class="flex min-h-0 min-w-0 flex-1 flex-col">
+	<ConnectionBanner state={sessionStore.connection} />
+
+	{#if sessionStore.error}
+		<div
+			role="alert"
+			class="flex items-center justify-between gap-2 bg-destructive px-4 py-2 text-sm text-destructive-foreground"
+		>
+			<span>{sessionStore.error}</span>
+			<button
+				type="button"
+				onclick={() => (sessionStore.error = null)}
+				class="min-h-11 min-w-11 rounded-md px-2 text-xs underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>Dismiss</button
 			>
-			<a
-				href="/settings"
-				class="flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-				aria-label="Settings"
-			>
-				<SettingsIcon class="size-4" />
-			</a>
 		</div>
-		{#if sessionsError}
-			<div
-				role="alert"
-				class="m-3 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+	{/if}
+
+	<header class="safe-top flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-4">
+		{#if isDesktop && collapsed}
+			<button
+				type="button"
+				onclick={toggleCollapse}
+				class="flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				aria-label="Expand sidebar"
 			>
-				{sessionsError}
-				<button type="button" onclick={loadSessions} class="mt-2 block min-h-11 underline"
-					>Retry</button
-				>
-			</div>
-		{:else if sessionsLoading}
-			<div class="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-				<Spinner class="size-4" /> Loading sessions…
-			</div>
+				<PanelLeftIcon class="size-4" />
+			</button>
+		{:else if !isDesktop}
+			<button
+				type="button"
+				onclick={() => (sessionsStore.historySheetOpen = true)}
+				class="flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				aria-label="Open session history"
+			>
+				<PanelLeftIcon class="size-4" />
+			</button>
 		{:else}
-			<div class="min-h-0 flex-1 overflow-y-auto">
-				<SessionList
-					{sessions}
-					activeId={sessionId}
-					onSelect={handleSelectSession}
-					onNew={handleNewSession}
-					onChanged={handleSessionsChanged}
+			<button
+				type="button"
+				onclick={toggleCollapse}
+				class="flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				aria-label="Collapse sidebar"
+			>
+				<PanelLeftCloseIcon class="size-4" />
+			</button>
+		{/if}
+		<span class="flex-1 truncate text-sm font-medium">{sessionTitle}</span>
+		<span
+			class="flex items-center gap-1.5 text-xs {sessionStore.connection === 'open'
+				? 'text-muted-foreground'
+				: sessionStore.connection === 'reconnecting'
+					? 'text-warning'
+					: 'text-muted-foreground'}"
+			aria-label={connectionLabel}
+			title={connectionLabel}
+		>
+			{#if sessionStore.connection === 'reconnecting' || sessionStore.connection === 'connecting'}
+				<Spinner class="size-3" />
+			{:else}
+				<span
+					class="h-2 w-2 rounded-full {sessionStore.connection === 'open'
+						? 'bg-primary'
+						: 'bg-muted-foreground'}"
+					aria-hidden="true"
+				></span>
+			{/if}
+			{connectionLabel}
+		</span>
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<button
+						type="button"
+						{...props}
+						class="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						aria-label="Session actions"
+					>
+						<EllipsisIcon class="size-4" />
+					</button>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="end">
+				<DropdownMenu.Item onclick={openRename}
+					><PencilIcon class="size-4" />Rename</DropdownMenu.Item
+				>
+				<DropdownMenu.Item onclick={openModelPicker}
+					>Model: {sessionStore.frameState.model}</DropdownMenu.Item
+				>
+				<DropdownMenu.Item onclick={handleExport}
+					><DownloadIcon class="size-4" />Export JSONL</DropdownMenu.Item
+				>
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
+	</header>
+
+	<div
+		class="flex items-center gap-2 border-b bg-card/50 px-4 py-1.5 text-xs text-muted-foreground"
+	>
+		<span class="truncate">{statusLine}</span>
+		{#if sessionStore.busy}
+			<Badge variant="secondary" class="ml-auto gap-1 text-xs"><Spinner class="size-3" />busy</Badge
+			>
+		{/if}
+	</div>
+
+	<TodoPanel todos={sessionStore.todos} />
+
+	<MessageList
+		messages={sessionStore.messages}
+		tools={sessionStore.tools}
+		{detailLevel}
+		{thinkingMode}
+		errs={sessionStore.errs}
+		pendingSends={sessionStore.pendingSends}
+		{hasMore}
+		{loadingEarlier}
+		onLoadEarlier={handleLoadEarlier}
+		onRerun={handleRerun}
+		onRetryPending={handleRetryPending}
+		onDismissPending={handleDismissPending}
+	/>
+
+	<Composer
+		bind:value={composerText}
+		busy={sessionStore.busy}
+		disabled={sessionStore.connection !== 'open' && sessionStore.connection !== 'reconnecting'}
+		{skills}
+		{skillsConfigured}
+		{skillsError}
+		bind:selectedSkills
+		onSend={handleSend}
+		onCancel={handleCancel}
+		onCommand={handleCommand}
+	/>
+
+	<Dialog.Root bind:open={showModelDialog}>
+		<Dialog.Content class="sm:max-w-md">
+			<Dialog.Header
+				><Dialog.Title>Change model</Dialog.Title><Dialog.Description
+					>Select a model for this session.</Dialog.Description
+				></Dialog.Header
+			>
+			<div class="flex flex-col gap-4">
+				<ModelPicker
+					{models}
+					value={selectedModel}
+					source={modelsSource}
+					onSelect={(id) => (selectedModel = id)}
 				/>
 			</div>
-		{/if}
-	</aside>
-	<div class="flex min-h-0 min-w-0 flex-1 flex-col">
-		<ConnectionBanner state={sessionStore.connection} />
-
-		{#if sessionStore.error}
-			<div
-				role="alert"
-				class="flex items-center justify-between gap-2 bg-destructive px-4 py-2 text-sm text-destructive-foreground"
-			>
-				<span>{sessionStore.error}</span>
-				<button
-					type="button"
-					onclick={() => (sessionStore.error = null)}
-					class="min-h-11 min-w-11 rounded-md px-2 text-xs underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-					>Dismiss</button
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showModelDialog = false)} class="min-h-11"
+					>Cancel</Button
 				>
-			</div>
-		{/if}
+				<Button
+					onclick={handleModelChange}
+					disabled={savingModel || !selectedModel}
+					class="min-h-11">{savingModel ? 'Saving…' : 'Save'}</Button
+				>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 
-		<header class="safe-top flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-4">
-			<Sheet.Root bind:open={historyOpen}>
-				<Sheet.Trigger>
-					{#snippet child({ props })}
-						<button
-							type="button"
-							{...props}
-							class="flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none md:hidden"
-							aria-label="Open session history"
-						>
-							<PanelLeftIcon class="size-4" />
-						</button>
-					{/snippet}
-				</Sheet.Trigger>
-				<Sheet.Content side="left" class="w-[min(20rem,calc(100vw-2rem))] gap-0 p-0 md:hidden">
-					<Sheet.Header class="border-b border-border px-4 py-3 pr-14 text-left">
-						<Sheet.Title>Session history</Sheet.Title>
-						<Sheet.Description>Return to a recent chat or start a new one.</Sheet.Description>
-					</Sheet.Header>
-					{#if sessionsError}
-						<div
-							role="alert"
-							class="m-3 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
-						>
-							{sessionsError}
-							<button type="button" onclick={loadSessions} class="mt-2 block min-h-11 underline"
-								>Retry</button
-							>
-						</div>
-					{:else if sessionsLoading}
-						<div
-							class="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground"
-						>
-							<Spinner class="size-4" /> Loading sessions…
-						</div>
-					{:else}
-						<div class="min-h-0 flex-1 overflow-y-auto">
-							<SessionList
-								{sessions}
-								activeId={sessionId}
-								onSelect={handleSelectSession}
-								onNew={handleNewSession}
-								onChanged={handleSessionsChanged}
-								onSelectSession={() => (historyOpen = false)}
-							/>
-						</div>
-					{/if}
-				</Sheet.Content>
-			</Sheet.Root>
-			<span class="flex-1 truncate text-sm font-medium">{sessionTitle}</span>
-			<span
-				class="flex items-center gap-1.5 text-xs {sessionStore.connection === 'open'
-					? 'text-muted-foreground'
-					: sessionStore.connection === 'reconnecting'
-						? 'text-warning'
-						: 'text-muted-foreground'}"
-				aria-label={connectionLabel}
-				title={connectionLabel}
+	<Dialog.Root bind:open={showRenameDialog}>
+		<Dialog.Content class="sm:max-w-md">
+			<Dialog.Header
+				><Dialog.Title>Rename session</Dialog.Title><Dialog.Description
+					>Title must be 1–60 characters.</Dialog.Description
+				></Dialog.Header
 			>
-				{#if sessionStore.connection === 'reconnecting' || sessionStore.connection === 'connecting'}
-					<Spinner class="size-3" />
-				{:else}
-					<span
-						class="h-2 w-2 rounded-full {sessionStore.connection === 'open'
-							? 'bg-primary'
-							: 'bg-muted-foreground'}"
-						aria-hidden="true"
-					></span>
-				{/if}
-				{connectionLabel}
-			</span>
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
-					{#snippet child({ props })}
-						<button
-							type="button"
-							{...props}
-							class="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-							aria-label="Session actions"
-						>
-							<EllipsisIcon class="size-4" />
-						</button>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end">
-					<DropdownMenu.Item onclick={openRename}>
-						<PencilIcon class="size-4" />
-						Rename
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={openModelPicker}>
-						Model: {sessionStore.frameState.model}
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={handleExport}>
-						<DownloadIcon class="size-4" />
-						Export JSONL
-					</DropdownMenu.Item>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-		</header>
+			<div class="flex flex-col gap-2">
+				<Label for="rename-input">Title</Label>
+				<Input id="rename-input" bind:value={renameValue} maxlength={60} class="min-h-11" />
+				<span class="text-xs text-muted-foreground">{renameValue.length}/60</span>
+			</div>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showRenameDialog = false)} class="min-h-11"
+					>Cancel</Button
+				>
+				<Button
+					onclick={handleRename}
+					disabled={renameSaving || !renameValue.trim()}
+					class="min-h-11">{renameSaving ? 'Saving…' : 'Save'}</Button
+				>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 
-		<div
-			class="flex items-center gap-2 border-b bg-card/50 px-4 py-1.5 text-xs text-muted-foreground"
-		>
-			<span class="truncate">{statusLine}</span>
-			{#if sessionStore.busy}
-				<Badge variant="secondary" class="ml-auto gap-1 text-xs">
-					<Spinner class="size-3" />
-					busy
-				</Badge>
-			{/if}
-		</div>
-
-		<TodoPanel todos={sessionStore.todos} />
-
-		<MessageList
-			messages={sessionStore.messages}
-			tools={sessionStore.tools}
-			{detailLevel}
-			{thinkingMode}
-			errs={sessionStore.errs}
-			pendingSends={sessionStore.pendingSends}
-			{hasMore}
-			{loadingEarlier}
-			onLoadEarlier={handleLoadEarlier}
-			onRerun={handleRerun}
-			onRetryPending={handleRetryPending}
-			onDismissPending={handleDismissPending}
-		/>
-
-		<Composer
-			bind:value={composerText}
-			busy={sessionStore.busy}
-			disabled={sessionStore.connection !== 'open' && sessionStore.connection !== 'reconnecting'}
-			{skills}
-			{skillsConfigured}
-			{skillsError}
-			bind:selectedSkills
-			onSend={handleSend}
-			onCancel={handleCancel}
-			onCommand={handleCommand}
-		/>
-
-		<!-- Model picker dialog -->
-		<Dialog.Root bind:open={showModelDialog}>
-			<Dialog.Content class="sm:max-w-md">
-				<Dialog.Header>
-					<Dialog.Title>Change model</Dialog.Title>
-					<Dialog.Description>Select a model for this session.</Dialog.Description>
-				</Dialog.Header>
-				<div class="flex flex-col gap-4">
-					<ModelPicker
-						{models}
-						value={selectedModel}
-						source={modelsSource}
-						onSelect={(id) => (selectedModel = id)}
-					/>
-				</div>
-				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (showModelDialog = false)} class="min-h-11"
-						>Cancel</Button
-					>
-					<Button
-						onclick={handleModelChange}
-						disabled={savingModel || !selectedModel}
-						class="min-h-11"
-					>
-						{savingModel ? 'Saving…' : 'Save'}
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
-
-		<!-- Rename dialog -->
-		<Dialog.Root bind:open={showRenameDialog}>
-			<Dialog.Content class="sm:max-w-md">
-				<Dialog.Header>
-					<Dialog.Title>Rename session</Dialog.Title>
-					<Dialog.Description>Title must be 1–60 characters.</Dialog.Description>
-				</Dialog.Header>
-				<div class="flex flex-col gap-2">
-					<Label for="rename-input">Title</Label>
-					<Input id="rename-input" bind:value={renameValue} maxlength={60} class="min-h-11" />
-					<span class="text-xs text-muted-foreground">{renameValue.length}/60</span>
-				</div>
-				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (showRenameDialog = false)} class="min-h-11"
-						>Cancel</Button
-					>
-					<Button
-						onclick={handleRename}
-						disabled={renameSaving || !renameValue.trim()}
-						class="min-h-11"
-					>
-						{renameSaving ? 'Saving…' : 'Save'}
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
-
-		<!-- Help dialog — renders from the same COMMANDS registry as the palette -->
-		<Dialog.Root bind:open={showHelpDialog}>
-			<Dialog.Content class="sm:max-w-md">
-				<Dialog.Header>
-					<Dialog.Title>Commands</Dialog.Title>
-					<Dialog.Description>Available slash commands.</Dialog.Description>
-				</Dialog.Header>
-				<div class="flex flex-col gap-1 py-2">
-					{#each COMMANDS as cmd (cmd.name)}
-						<div class="flex items-baseline gap-2 rounded-md px-3 py-2">
-							<span class="shrink-0 font-mono text-sm font-medium">/{cmd.name}</span>
-							<span class="text-sm text-muted-foreground">{cmd.description}</span>
-						</div>
-					{/each}
-				</div>
-				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (showHelpDialog = false)} class="min-h-11"
-						>Close</Button
-					>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
-	</div>
+	<Dialog.Root bind:open={showHelpDialog}>
+		<Dialog.Content class="sm:max-w-md">
+			<Dialog.Header
+				><Dialog.Title>Commands</Dialog.Title><Dialog.Description
+					>Available slash commands.</Dialog.Description
+				></Dialog.Header
+			>
+			<div class="flex flex-col gap-1 py-2">
+				{#each COMMANDS as cmd (cmd.name)}
+					<div class="flex items-baseline gap-2 rounded-md px-3 py-2">
+						<span class="shrink-0 font-mono text-sm font-medium">/{cmd.name}</span>
+						<span class="text-sm text-muted-foreground">{cmd.description}</span>
+					</div>
+				{/each}
+			</div>
+			<Dialog.Footer
+				><Button variant="outline" onclick={() => (showHelpDialog = false)} class="min-h-11"
+					>Close</Button
+				></Dialog.Footer
+			>
+		</Dialog.Content>
+	</Dialog.Root>
 </div>

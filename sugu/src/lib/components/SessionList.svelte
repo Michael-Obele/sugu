@@ -2,14 +2,12 @@
 	import { cn } from '$lib/utils';
 	import { relativeTime } from '$lib/format';
 	import type { SessionMeta } from '$lib/api';
-	import { patchSession, deleteSession, exportSession, downloadJsonl } from '$lib/api';
+	import { exportSession, downloadJsonl } from '$lib/api';
+	import { sessionsStore } from '$lib/sessions.svelte';
 	import * as ContextMenu from '$lib/components/ui/context-menu/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import * as Empty from '$lib/components/ui/empty/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import DownloadIcon from '@lucide/svelte/icons/download';
@@ -27,16 +25,6 @@
 	};
 
 	let { sessions, onSelect, onNew, activeId = null, onChanged, onSelectSession }: Props = $props();
-
-	let renameOpen = $state(false);
-	let renameId: string | null = $state(null);
-	let renameValue = $state('');
-	let renameError: string | null = $state(null);
-	let renameSaving = $state(false);
-
-	let deleteOpen = $state(false);
-	let deleteId: string | null = $state(null);
-	let deleteSaving = $state(false);
 
 	let exportError: string | null = $state(null);
 
@@ -59,58 +47,11 @@
 	}
 
 	function openRename(id: string, currentTitle: string): void {
-		renameId = id;
-		renameValue = currentTitle;
-		renameError = null;
-		renameOpen = true;
+		sessionsStore.openRename(id, currentTitle);
 	}
 
 	function openDelete(id: string): void {
-		deleteId = id;
-		deleteOpen = true;
-	}
-
-	async function handleRename(): Promise<void> {
-		if (!renameId) return;
-		const trimmed = renameValue.trim();
-		if (!trimmed) {
-			renameError = 'Title cannot be empty';
-			return;
-		}
-		if (trimmed.length > 60) {
-			renameError = 'Title must be 60 characters or less';
-			return;
-		}
-		renameSaving = true;
-		renameError = null;
-		try {
-			await patchSession(renameId, { title: trimmed });
-			renameOpen = false;
-			renameId = null;
-			onChanged?.();
-		} catch (e) {
-			const err = e as { message?: string };
-			renameError = err.message ?? 'Rename failed';
-		} finally {
-			renameSaving = false;
-		}
-	}
-
-	async function handleDelete(): Promise<void> {
-		if (!deleteId) return;
-		deleteSaving = true;
-		try {
-			await deleteSession(deleteId);
-			deleteOpen = false;
-			deleteId = null;
-			onChanged?.();
-		} catch (e) {
-			// idempotent — even on error, close and refresh
-			deleteOpen = false;
-			onChanged?.();
-		} finally {
-			deleteSaving = false;
-		}
+		sessionsStore.openDelete(id);
 	}
 
 	async function handleExport(id: string): Promise<void> {
@@ -245,61 +186,3 @@
 		</Empty.Root>
 	{/each}
 </div>
-
-<!-- Rename dialog -->
-<Dialog.Root bind:open={renameOpen}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>Rename session</Dialog.Title>
-			<Dialog.Description>Title must be 1–60 characters.</Dialog.Description>
-		</Dialog.Header>
-		<div class="flex flex-col gap-2">
-			<Input
-				bind:value={renameValue}
-				maxlength={60}
-				placeholder="Session title"
-				class="min-h-11"
-				aria-label="Session title"
-			/>
-			<div class="flex justify-between text-xs">
-				<span class="text-muted-foreground">{renameValue.length}/60</span>
-				{#if renameError}
-					<span class="text-destructive">{renameError}</span>
-				{/if}
-			</div>
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (renameOpen = false)} class="min-h-11">Cancel</Button
-			>
-			<Button
-				onclick={handleRename}
-				disabled={renameSaving || !renameValue.trim()}
-				class="min-h-11"
-			>
-				{renameSaving ? 'Saving…' : 'Save'}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<!-- Delete confirm -->
-<AlertDialog.Root bind:open={deleteOpen}>
-	<AlertDialog.Content>
-		<AlertDialog.Header>
-			<AlertDialog.Title>Delete session?</AlertDialog.Title>
-			<AlertDialog.Description
-				>This cannot be undone. The session will be removed from your list.</AlertDialog.Description
-			>
-		</AlertDialog.Header>
-		<AlertDialog.Footer>
-			<AlertDialog.Cancel class="min-h-11">Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action
-				onclick={handleDelete}
-				disabled={deleteSaving}
-				class="bg-destructive text-destructive-foreground hover:bg-destructive/90 min-h-11"
-			>
-				{deleteSaving ? 'Deleting…' : 'Delete'}
-			</AlertDialog.Action>
-		</AlertDialog.Footer>
-	</AlertDialog.Content>
-</AlertDialog.Root>
