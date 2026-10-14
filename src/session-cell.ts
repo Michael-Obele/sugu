@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { nowIso } from './shared/time';
+import { oneOrNull } from './shared/sql';
 import { parseFrame } from './shared/contracts';
 import { verifyToken } from './server/auth';
 import { resolveAdapter } from './server/models';
@@ -145,9 +146,12 @@ export class SessionCell extends DurableObject<Env> {
 	async getUsage(
 		day: string
 	): Promise<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | null> {
-		const row = this.ctx.storage.sql
-			.exec('SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?', day)
-			.one() as unknown as { day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | undefined;
+		const row = oneOrNull(
+			this.ctx.storage.sql.exec(
+				'SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?',
+				day
+			) as unknown as Iterable<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number }>
+		);
 		if (!row) return null;
 		return row;
 	}
@@ -204,14 +208,10 @@ export class SessionCell extends DurableObject<Env> {
 
 	// Session id persistence (survives DO eviction)
 	private getSessionId(): string | null {
-		try {
-			const row = this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'sessionId'").one() as unknown as
-				| { value: string }
-				| undefined;
-			return row?.value ?? null;
-		} catch {
-			return null;
-		}
+		const row = oneOrNull(
+			this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'sessionId'") as unknown as Iterable<{ value: string }>
+		);
+		return row?.value ?? null;
 	}
 
 	private setSessionId(id: string): void {
@@ -222,12 +222,10 @@ export class SessionCell extends DurableObject<Env> {
 	}
 
 	private getModel(): string | null {
-		try {
-			const row = this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'model'").one() as unknown as { value: string } | undefined;
-			return row?.value ?? null;
-		} catch {
-			return null;
-		}
+		const row = oneOrNull(
+			this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'model'") as unknown as Iterable<{ value: string }>
+		);
+		return row?.value ?? null;
 	}
 
 	private setModel(model: string): void {

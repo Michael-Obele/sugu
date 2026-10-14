@@ -3,6 +3,8 @@
  * Pattern follows src/server/models.ts: configurable source, injectable fetch for tests.
  */
 
+import { oneOrNull } from '../shared/sql';
+
 export const MAX_SKILL_BYTES = 8 * 1024; // AR-7 hard cap per skill
 export const TOTAL_SKILLS_BUDGET = 32 * 1024; // 32KB total (4 skills ×8KB) — keeps prompt bounded
 export const MAX_FETCHES_PER_TURN = 3; // AR-5: 1 model + 3 fetches = 4 subrequests
@@ -353,18 +355,17 @@ export async function resolveSkillsForTurn(
 			continue;
 		}
 
-		// Try cache first
+		// Try cache first (oneOrNull: 0 rows → null, never throws)
 		let cached: { content: string; source: string; path: string } | null = null;
-		try {
-			const row =
-				(sql.exec('SELECT content, source, path FROM skills_cache WHERE name = ?', name).one() as unknown as
-					| { content: string; source: string; path: string }
-					| undefined) ?? (null as { content: string; source: string; path: string } | null);
-			if (row) {
-				cached = { content: row.content, source: row.source, path: row.path };
-			}
-		} catch {
-			// ignore
+		const row = oneOrNull(
+			sql.exec('SELECT content, source, path FROM skills_cache WHERE name = ?', name) as unknown as Iterable<{
+				content: string;
+				source: string;
+				path: string;
+			}>
+		);
+		if (row) {
+			cached = { content: row.content, source: row.source, path: row.path };
 		}
 
 		let content: string | null = null;

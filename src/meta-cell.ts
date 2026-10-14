@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { nowIso } from './shared/time';
+import { oneOrNull } from './shared/sql';
 import type { SessionMeta } from './shared/contracts';
 
 export class MetaCell extends DurableObject<Env> {
@@ -89,12 +90,9 @@ export class MetaCell extends DurableObject<Env> {
 	}
 
 	async get(id: string): Promise<SessionMeta | null> {
-		let row: Record<string, unknown> | undefined;
-		try {
-			row = this.ctx.storage.sql.exec('SELECT * FROM sessions WHERE id = ?', id).one() as unknown as Record<string, unknown>;
-		} catch {
-			return null;
-		}
+		const row = oneOrNull(
+			this.ctx.storage.sql.exec('SELECT * FROM sessions WHERE id = ?', id) as unknown as Iterable<Record<string, unknown>>
+		) as Record<string, unknown> | null;
 		if (!row) return null;
 		return rowToMeta(row);
 	}
@@ -117,9 +115,12 @@ export class MetaCell extends DurableObject<Env> {
 	async getUsage(
 		day: string
 	): Promise<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | null> {
-		const row = this.ctx.storage.sql
-			.exec('SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?', day)
-			.one() as unknown as { day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number } | undefined;
+		const row = oneOrNull(
+			this.ctx.storage.sql.exec(
+				'SELECT day, turns, prompt_t, compl_t, cost_usd, tools FROM usage WHERE day = ?',
+				day
+			) as unknown as Iterable<{ day: string; turns: number; prompt_t: number; compl_t: number; cost_usd: number; tools: number }>
+		);
 		if (!row) return null;
 		return row;
 	}
