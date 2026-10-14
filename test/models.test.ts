@@ -183,6 +183,22 @@ describe('costFor', () => {
 		const cost = costFor('unknown-model-xyz', 1000, 1000);
 		expect(cost).toBe(0);
 	});
+
+	test('live alias price wins over fallback (C6)', async () => {
+		const { __setPriceMapForTests, __resetPriceMapForTests } = await import('../src/server/models');
+		// Simulate live price for deepseek-chat via OpenRouter alias
+		__setPriceMapForTests([['deepseek/deepseek-chat', { promptPerM: 9, completionPerM: 9 }]]);
+		// costFor('deepseek-chat') should use the live alias price (9), not fallback (0.27/1.1)
+		const cost = costFor('deepseek-chat', 1_000_000, 0);
+		expect(cost).toBe(9);
+		const cost2 = costFor('deepseek-reasoner', 1_000_000, 0);
+		// no alias for reasoner in this map -> fallback 0.55
+		// but we only set deepseek/deepseek-chat, so reasoner should be 0 (no entry)
+		// Actually FALLBACK_MODELS has reasoner, but priceMap was cleared — so alias check fails, then fallback
+		// After fix, fallback is checked last, so reasoner with no alias should still get fallback
+		expect(cost2).toBe(0.55);
+		__resetPriceMapForTests();
+	});
 });
 
 describe('catalogue invariants', () => {

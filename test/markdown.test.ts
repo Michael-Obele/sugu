@@ -178,4 +178,38 @@ describe('renderMarkdown', () => {
 		expect(html).toContain('<p>para one</p>');
 		expect(html).toContain('<p>para two</p>');
 	});
+
+	// A4 — missing attack tests
+	test('multiple on* attributes on one element all stripped (A1)', () => {
+		const html = render('<p onclick="1" onmouseover="2" onfocus="3" onload="4" onerror="5">hi</p>');
+		expect(html).not.toContain('onclick');
+		expect(html).not.toContain('onmouseover');
+		expect(html).not.toContain('onfocus');
+		expect(html).not.toContain('onload');
+		expect(html).not.toContain('onerror');
+		expect(html).toContain('hi');
+	});
+
+	test('blob: URL removed (A3)', () => {
+		const html = render('[x](blob:https://example.com/uuid)');
+		expect(html).not.toContain('blob:');
+	});
+
+	test('zero-width-space-prefixed javascript: URL removed (A3)', () => {
+		const zws = '\u200B';
+		const html = render(`[x](${zws}javascript:alert(1))`);
+		expect(html).not.toContain('javascript:');
+	});
+
+	test('id/class/data-* attributes stripped by allowlist (A2)', () => {
+		const html = render('<p id="x" class="y" data-foo="bar">hi</p>');
+		expect(html).not.toContain('id=');
+		expect(html).not.toContain('data-foo');
+		expect(html).toContain('hi');
+	});
+
+	test('fenced code language class preserved (A2 exception)', () => {
+		const html = render('```js\nconsole.log(1)\n```');
+		expect(html).toContain('language-js');
+	});
 });

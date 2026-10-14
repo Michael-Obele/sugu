@@ -187,9 +187,12 @@ describe('batch2c: SUGU_MODELS and SUGU_MODELS_FILTER', () => {
 			{ id: 'custom/model', label: 'Custom', provider: 'openrouter', price: { promptPerM: 1, completionPerM: 2 }, priceKnown: true }
 		]);
 		// Even with a failing fetch, override should win without hitting network
+		// but direct models + defaultModel invariant still holds (B2)
 		const result = await getModels({ SUGU_MODELS: custom }, { fetchImpl: makeFetchFail(), cacheImpl: makeCache().cache });
-		expect(result.models.length).toBe(1);
-		expect(result.models[0]!.id).toBe('custom/model');
+		expect(result.models.some((m) => m.id === 'custom/model')).toBe(true);
+		expect(result.models.some((m) => m.id === 'deepseek-chat')).toBe(true);
+		expect(result.models.some((m) => m.id === 'deepseek-reasoner')).toBe(true);
+		expect(result.models.some((m) => m.id === result.defaultModel)).toBe(true);
 	});
 
 	test('SUGU_MODELS_FILTER narrows', async () => {

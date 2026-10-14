@@ -230,13 +230,9 @@ export function __resetPriceMapForTests() {
 
 function costFor(model: string, promptT: number, complT: number): number {
 	let entry = priceMap.get(model);
-	// Also check OpenRouter-prefixed variant for deepseek direct ids:
-	// e.g. 'deepseek-chat' -> 'deepseek/deepseek-chat' (live catalogue uses the latter)
-	if (!entry) {
-		// Fallback: if priceMap was cleared (e.g. by tests), check FALLBACK_MODELS directly
-		const fb = FALLBACK_MODELS.find((m) => m.id === model);
-		if (fb?.priceKnown && fb.price) entry = fb.price;
-	}
+	// Live alias: deepseek direct ids may have price under OpenRouter prefix
+	// (e.g. 'deepseek-chat' -> 'deepseek/deepseek-chat'). Live prices always win,
+	// so check alias before falling back to bundled FALLBACK_MODELS.
 	if (!entry && model === 'deepseek-chat') {
 		const alt = priceMap.get('deepseek/deepseek-chat');
 		if (alt) return (promptT * alt.promptPerM + complT * alt.completionPerM) / 1_000_000;
@@ -244,6 +240,10 @@ function costFor(model: string, promptT: number, complT: number): number {
 	if (!entry && model === 'deepseek-reasoner') {
 		const alt = priceMap.get('deepseek/deepseek-reasoner');
 		if (alt) return (promptT * alt.promptPerM + complT * alt.completionPerM) / 1_000_000;
+	}
+	if (!entry) {
+		const fb = FALLBACK_MODELS.find((m) => m.id === model);
+		if (fb?.priceKnown && fb.price) entry = fb.price;
 	}
 	if (!entry) return 0;
 	return (promptT * entry.promptPerM + complT * entry.completionPerM) / 1_000_000;
@@ -799,10 +799,13 @@ export async function getModels(
 	if (env.SUGU_MODELS) {
 		const overridden = parseSuguModelsOverride(env.SUGU_MODELS);
 		if (overridden) {
-			let models = overridden;
+			const defaultModel = resolveDefaultModel(env);
+			// SUGU_MODELS narrows the OpenRouter portion, but the direct DeepSeek
+			// models and defaultModel invariant still hold (B2).
+			let models = mergeWithDirect(overridden, defaultModel);
 			if (env.SUGU_MODELS_FILTER) models = filterModels(models, env.SUGU_MODELS_FILTER);
 			updatePriceMap(models);
-			return { models, source: 'fallback', fetchedAt: new Date().toISOString(), defaultModel: resolveDefaultModel(env) };
+			return { models, source: 'fallback', fetchedAt: new Date().toISOString(), defaultModel };
 		}
 	}
 
@@ -880,12 +883,14 @@ export async function getModels(
 
 // Synchronous helper for backward compat — returns fallback models synchronously.
 // Used by old tests that call getModels without await. New code should use async getModels.
-export function getModelsSync(env: { SUGU_MODELS?: string; SUGU_MODELS_FILTER?: string }): ModelInfo[] {
+export function getModelsSync(env: { SUGU_MODELS?: string; SUGU_MODELS_FILTER?: string; SUGU_DEFAULT_MODEL?: string }): ModelInfo[] {
 	if (env.SUGU_MODELS) {
 		const overridden = parseSuguModelsOverride(env.SUGU_MODELS);
 		if (overridden) {
-			if (env.SUGU_MODELS_FILTER) return filterModels(overridden, env.SUGU_MODELS_FILTER);
-			return overridden;
+			const defaultModel = resolveDefaultModel(env as { SUGU_DEFAULT_MODEL?: string });
+			let models = mergeWithDirect(overridden, defaultModel);
+			if (env.SUGU_MODELS_FILTER) return filterModels(models, env.SUGU_MODELS_FILTER);
+			return models;
 		}
 	}
 	let models = FALLBACK_MODELS;

@@ -321,9 +321,11 @@ describe('batch2a: GET /api/models', () => {
 	test('SUGU_MODELS override is honoured (unit)', async () => {
 		const custom = JSON.stringify([{ id: 'custom/model', label: 'Custom', provider: 'openrouter' }]);
 		const result = await getModels({ SUGU_MODELS: custom });
-		expect(result.models.length).toBe(1);
-		expect(result.models[0]!.id).toBe('custom/model');
-		expect(result.models[0]!.label).toBe('Custom');
+		// SUGU_MODELS narrows OpenRouter portion but direct models + defaultModel still present (B2)
+		expect(result.models.some((m) => m.id === 'custom/model')).toBe(true);
+		expect(result.models.some((m) => m.id === 'deepseek-chat')).toBe(true);
+		expect(result.models.some((m) => m.id === 'deepseek-reasoner')).toBe(true);
+		expect(result.models.some((m) => m.id === result.defaultModel)).toBe(true);
 	});
 
 	test('requires auth', async () => {

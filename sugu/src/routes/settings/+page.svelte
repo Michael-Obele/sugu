@@ -21,6 +21,7 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import { SELECT_TRIGGER_CLASS } from '$lib/utils';
 
 	let sessions = $state<SessionMeta[]>([]);
 	let selectedId = $state('');
@@ -165,10 +166,7 @@
 			<div class="space-y-2">
 				<Label for="session-select">Session</Label>
 				<Select.Root type="single" value={selectedId} onValueChange={(v) => handleSessionChange(v)}>
-					<Select.Trigger
-						id="session-select"
-						class="h-11 min-h-11 w-full justify-between rounded-md border !bg-card px-3 py-2 text-sm font-normal dark:!bg-card"
-					>
+					<Select.Trigger id="session-select" class={SELECT_TRIGGER_CLASS}>
 						{#if selectedSession}
 							<span class="truncate"
 								>{selectedSession.title || selectedSession.id.slice(0, 8)} · {selectedSession.model}</span

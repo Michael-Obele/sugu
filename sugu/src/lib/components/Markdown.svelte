@@ -9,54 +9,92 @@
 	let copiedIndex: number | null = $state(null);
 	let copyTimeout: ReturnType<typeof setTimeout> | null = null;
 
+	// Hoisted class constants — greppable, not buried in JS string literals
+	const WRAPPER_CLASS =
+		'my-2 max-w-full min-w-0 overflow-hidden rounded-md border border-border bg-muted';
+	const HEADER_CLASS =
+		'flex items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1';
+	const LANG_CLASS = 'text-xs font-mono text-muted-foreground';
+	const COPY_BTN_CLASS =
+		'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+	const SCROLL_CLASS = 'max-w-full overflow-x-auto p-3';
+
+	const COPY_SVG =
+		'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+	const CHECK_SVG =
+		'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
 	function handleCopy(index: number, code: string) {
-		navigator.clipboard.writeText(code).then(() => {
-			copiedIndex = index;
-			if (copyTimeout) clearTimeout(copyTimeout);
-			copyTimeout = setTimeout(() => {
-				copiedIndex = null;
-			}, 1500);
+		navigator.clipboard.writeText(code).then(
+			() => {
+				copiedIndex = index;
+				if (copyTimeout) clearTimeout(copyTimeout);
+				copyTimeout = setTimeout(() => {
+					copiedIndex = null;
+				}, 1500);
+			},
+			() => {
+				// quiet failure: insecure context or permission denied — no unhandled rejection
+			}
+		);
+	}
+
+	function syncCopyButtons() {
+		if (!container) return;
+		const wrappers = container.querySelectorAll('[data-code-block]');
+		wrappers.forEach((wrapper, idx) => {
+			const btn = wrapper.querySelector('[data-copy-btn]') as HTMLButtonElement | null;
+			if (!btn) return;
+			const isCopied = copiedIndex === idx;
+			btn.setAttribute('aria-label', isCopied ? 'Copied!' : 'Copy code');
+			btn.setAttribute('data-copied', String(isCopied));
+			btn.innerHTML = isCopied ? CHECK_SVG : COPY_SVG;
 		});
 	}
 
 	// External DOM side effect: enhance <pre> blocks with header + copy button.
+	// Delegated click listener on the container — no per-button listeners, no cloneNode.
 	// This is the one legitimate use of $effect — direct DOM manipulation for
 	// third-party-rendered HTML that Svelte does not own.
 	$effect(() => {
 		void html;
-		void streaming;
-		void copiedIndex;
 		if (!container) return;
+
 		const pres = Array.from(container.querySelectorAll('pre')) as HTMLPreElement[];
-		// Wrap any unwrapped <pre> into header + scroll structure so the copy
-		// button never overlaps code and long lines scroll inside their container.
 		pres.forEach((pre, idx) => {
 			if (pre.dataset.enhanced === 'true') return;
 			const codeEl = pre.querySelector('code');
 			const codeText = codeEl?.textContent ?? pre.textContent ?? '';
 			const langMatch = codeEl?.className.match(/language-([\w-]+)/);
 			const lang = langMatch?.[1] ?? '';
+
 			const wrapper = document.createElement('div');
 			wrapper.setAttribute('data-code-block', String(idx));
-			wrapper.className =
-				'my-2 max-w-full min-w-0 overflow-hidden rounded-md border border-border bg-muted';
+			wrapper.className = WRAPPER_CLASS;
+
 			const header = document.createElement('div');
 			header.setAttribute('data-code-header', '');
-			header.className =
-				'flex items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1';
+			header.className = HEADER_CLASS;
+
 			const langEl = document.createElement('span');
 			langEl.setAttribute('data-lang', lang);
-			langEl.className = 'text-xs font-mono text-muted-foreground';
+			langEl.className = LANG_CLASS;
 			langEl.textContent = lang || 'code';
+
 			const btn = document.createElement('button');
 			btn.setAttribute('data-copy-btn', String(idx));
 			btn.setAttribute('data-code-text', codeText);
-			btn.className =
-				'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+			btn.className = COPY_BTN_CLASS;
+			btn.setAttribute('aria-label', 'Copy code');
+			btn.setAttribute('data-copied', 'false');
+			btn.innerHTML = COPY_SVG;
+
 			header.append(langEl, btn);
+
 			const scroll = document.createElement('div');
 			scroll.setAttribute('data-code-scroll', '');
-			scroll.className = 'max-w-full overflow-x-auto p-3';
+			scroll.className = SCROLL_CLASS;
+
 			pre.className = 'm-0 !bg-transparent !p-0 font-mono text-sm';
 			pre.style.overflow = 'visible';
 			pre.style.position = '';
@@ -74,27 +112,34 @@
 			wrapper.append(header, scroll);
 			scroll.appendChild(pre);
 		});
-		// Update all copy buttons for current copiedIndex (label, icon, handler)
-		const wrappers = container.querySelectorAll('[data-code-block]');
-		wrappers.forEach((wrapper, idx) => {
-			const btn = wrapper.querySelector('[data-copy-btn]') as HTMLButtonElement | null;
-			const pre = wrapper.querySelector('pre');
-			const codeEl = pre?.querySelector('code');
-			const codeText =
-				codeEl?.textContent ?? pre?.textContent ?? btn?.getAttribute('data-code-text') ?? '';
-			if (!btn) return;
-			btn.setAttribute('data-code-text', codeText);
-			const fresh = btn.cloneNode(true) as HTMLButtonElement;
-			btn.replaceWith(fresh);
-			const newBtn = fresh;
-			newBtn.addEventListener('click', () => handleCopy(idx, codeText));
-			const isCopied = copiedIndex === idx;
-			newBtn.setAttribute('aria-label', isCopied ? 'Copied!' : 'Copy code');
-			newBtn.setAttribute('data-copied', String(isCopied));
-			newBtn.innerHTML = isCopied
-				? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
-				: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
-		});
+
+		syncCopyButtons();
+
+		// Single delegated listener — resolves button via closest, looks up code by data attribute
+		const onClick = (e: MouseEvent) => {
+			const target = e.target as Element;
+			const btn = target.closest('[data-copy-btn]') as HTMLButtonElement | null;
+			if (!btn || !container!.contains(btn)) return;
+			const idx = Number(btn.getAttribute('data-copy-btn'));
+			const code = btn.getAttribute('data-code-text') ?? '';
+			if (!Number.isFinite(idx)) return;
+			handleCopy(idx, code);
+		};
+		container.addEventListener('click', onClick);
+
+		return () => {
+			container?.removeEventListener('click', onClick);
+			if (copyTimeout) {
+				clearTimeout(copyTimeout);
+				copyTimeout = null;
+			}
+		};
+	});
+
+	// Keep button visuals in sync when copiedIndex changes without re-wrapping
+	$effect(() => {
+		void copiedIndex;
+		syncCopyButtons();
 	});
 </script>
 

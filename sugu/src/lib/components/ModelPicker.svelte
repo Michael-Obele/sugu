@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn, SELECT_TRIGGER_CLASS } from '$lib/utils';
 	import { formatPrice, formatContextLength } from '$lib/format';
 	import type { ModelInfo } from '$lib/api';
 	import * as Popover from '$lib/components/ui/popover/index.js';
@@ -47,7 +47,6 @@
 	let directFiltered = $derived(filtered.filter((m) => m.provider === 'deepseek'));
 	let openRouterFiltered = $derived(filtered.filter((m) => m.provider === 'openrouter'));
 
-	// Per-group cap: 50 each, with counts
 	const PER_GROUP_CAP = 50;
 
 	let directShown = $derived(directFiltered.slice(0, PER_GROUP_CAP));
@@ -60,6 +59,43 @@
 	}
 </script>
 
+{#snippet modelRow(model: ModelInfo)}
+	<span class="flex w-full items-center gap-2">
+		<CheckIcon class={cn('h-4 w-4 shrink-0', value === model.id ? 'opacity-100' : 'opacity-0')} />
+		<span class="truncate text-sm font-medium"
+			>{model.label}{#if model.id === defaultModel}<span class="ml-1 text-xs text-muted-foreground"
+					>· default</span
+				>{/if}</span
+		>
+		<span class="ml-auto truncate text-xs text-muted-foreground">{model.id}</span>
+	</span>
+	<span class="ml-6 flex gap-3 text-xs text-muted-foreground">
+		{#if model.contextLength}<span>{formatContextLength(model.contextLength)} ctx</span>{:else}<span
+				>ctx unknown</span
+			>{/if}
+		<span>{formatPrice(model)}</span>
+	</span>
+{/snippet}
+
+{#snippet modelGroup(heading: string, shown: ModelInfo[], filtered: ModelInfo[])}
+	<Command.Group {heading}>
+		{#each shown as model (model.id)}
+			<Command.Item
+				value={model.id}
+				onSelect={() => handleSelect(model.id)}
+				class="flex min-h-11 flex-col items-start gap-0.5 py-2"
+			>
+				{@render modelRow(model)}
+			</Command.Item>
+		{/each}
+		{#if filtered.length > PER_GROUP_CAP}
+			<div class="px-2 py-1.5 text-center text-xs text-muted-foreground">
+				Showing {PER_GROUP_CAP} of {filtered.length} — keep typing to narrow
+			</div>
+		{/if}
+	</Command.Group>
+{/snippet}
+
 <Popover.Root bind:open>
 	<Popover.Trigger>
 		{#snippet child({ props })}
@@ -69,10 +105,7 @@
 				role="combobox"
 				aria-expanded={open}
 				{disabled}
-				class={cn(
-					'h-11 min-h-11 w-full justify-between rounded-md border !bg-card px-3 py-2 text-sm font-normal dark:!bg-card',
-					!value && !selected && 'text-muted-foreground'
-				)}
+				class={cn(SELECT_TRIGGER_CLASS, !value && !selected && 'text-muted-foreground')}
 			>
 				<span class="truncate text-left">
 					{#if selected}
@@ -98,74 +131,15 @@
 			<Command.List>
 				<Command.Empty>No model found.</Command.Empty>
 				{#if directShown.length > 0}
-					<Command.Group heading="Direct (DeepSeek)">
-						{#each directShown as model (model.id)}
-							<Command.Item
-								value={model.id}
-								onSelect={() => handleSelect(model.id)}
-								class="flex min-h-11 flex-col items-start gap-0.5 py-2"
-							>
-								<span class="flex w-full items-center gap-2">
-									<CheckIcon
-										class={cn('h-4 w-4 shrink-0', value === model.id ? 'opacity-100' : 'opacity-0')}
-									/>
-									<span class="truncate text-sm font-medium"
-										>{model.label}{#if model.id === defaultModel}<span
-												class="ml-1 text-xs text-muted-foreground">&nbsp;· default</span
-											>{/if}</span
-									>
-									<span class="ml-auto truncate text-xs text-muted-foreground">{model.id}</span>
-								</span>
-								<span class="ml-6 flex gap-3 text-xs text-muted-foreground">
-									{#if model.contextLength}<span
-											>{formatContextLength(model.contextLength)} ctx</span
-										>{:else}<span>ctx unknown</span>{/if}
-									<span>{formatPrice(model)}</span>
-								</span>
-							</Command.Item>
-						{/each}
-						{#if directFiltered.length > PER_GROUP_CAP}
-							<div class="px-2 py-1.5 text-center text-xs text-muted-foreground">
-								Showing {PER_GROUP_CAP} of {directFiltered.length} — keep typing to narrow
-							</div>
-						{/if}
-					</Command.Group>
+					{@render modelGroup('Direct (DeepSeek)', directShown, directFiltered)}
 				{/if}
 				{#if openRouterShown.length > 0}
-					<Command.Group heading="OpenRouter">
-						{#each openRouterShown as model (model.id)}
-							<Command.Item
-								value={model.id}
-								onSelect={() => handleSelect(model.id)}
-								class="flex min-h-11 flex-col items-start gap-0.5 py-2"
-							>
-								<span class="flex w-full items-center gap-2">
-									<CheckIcon
-										class={cn('h-4 w-4 shrink-0', value === model.id ? 'opacity-100' : 'opacity-0')}
-									/>
-									<span class="truncate text-sm font-medium"
-										>{model.label}{#if model.id === defaultModel}<span
-												class="ml-1 text-xs text-muted-foreground">&nbsp;· default</span
-											>{/if}</span
-									>
-									<span class="ml-auto truncate text-xs text-muted-foreground">{model.id}</span>
-								</span>
-								<span class="ml-6 flex gap-3 text-xs text-muted-foreground">
-									{#if model.contextLength}<span
-											>{formatContextLength(model.contextLength)} ctx</span
-										>{:else}<span>ctx unknown</span>{/if}
-									<span>{formatPrice(model)}</span>
-								</span>
-							</Command.Item>
-						{/each}
-						{#if openRouterFiltered.length > PER_GROUP_CAP}
-							<div class="px-2 py-1.5 text-center text-xs text-muted-foreground">
-								Showing {PER_GROUP_CAP} of {openRouterFiltered.length} — keep typing to narrow
-							</div>
-						{/if}
-					</Command.Group>
+					{@render modelGroup('OpenRouter', openRouterShown, openRouterFiltered)}
 				{/if}
 			</Command.List>
+			<div class="border-t px-3 py-2 text-xs text-muted-foreground">
+				Direct runs on DeepSeek · OpenRouter runs via OpenRouter
+			</div>
 			{#if source === 'fallback'}
 				<div class="border-t px-3 py-2 text-xs text-muted-foreground">
 					Offline catalogue — prices may be stale
