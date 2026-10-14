@@ -791,7 +791,11 @@ export async function getModels(
 	env: { SUGU_MODELS?: string; SUGU_MODELS_URL?: string; SUGU_MODELS_FILTER?: string; MODEL_STUB?: string; SUGU_DEFAULT_MODEL?: string },
 	opts?: { fetchImpl?: typeof fetch; cacheImpl?: Cache | null }
 ): Promise<CatalogueResult> {
-	// Static override wins — no fetch, no cache
+	// Static override wins — no fetch, no cache.
+	// NOTE: SUGU_MODELS is an explicit operator override: the caller supplies the
+	// exact catalogue, so we do not inject DIRECT_DEEPSEEK_MODELS or synthesize
+	// defaultModel here. All other paths (live/cache/fallback) guarantee
+	// defaultModel is present via mergeWithDirect.
 	if (env.SUGU_MODELS) {
 		const overridden = parseSuguModelsOverride(env.SUGU_MODELS);
 		if (overridden) {

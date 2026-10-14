@@ -24,6 +24,7 @@
 
 	let sessions = $state<SessionMeta[]>([]);
 	let selectedId = $state('');
+	let selectedSession = $derived(sessions.find((s) => s.id === selectedId) ?? null);
 	let models = $state<ModelInfo[]>([]);
 	let modelsSource = $state('fallback');
 	let defaultModel = $state('deepseek-chat');
@@ -168,7 +169,13 @@
 						id="session-select"
 						class="h-11 min-h-11 w-full justify-between rounded-md border !bg-card px-3 py-2 text-sm font-normal dark:!bg-card"
 					>
-						<Select.Value placeholder="Select session" />
+						{#if selectedSession}
+							<span class="truncate"
+								>{selectedSession.title || selectedSession.id.slice(0, 8)} · {selectedSession.model}</span
+							>
+						{:else}
+							<span class="text-muted-foreground">Select session</span>
+						{/if}
 					</Select.Trigger>
 					<Select.Content>
 						{#each sessions as s (s.id)}

@@ -111,13 +111,15 @@
 									/>
 									<span class="truncate text-sm font-medium"
 										>{model.label}{#if model.id === defaultModel}<span
-												class="ml-1 text-xs text-muted-foreground">· default</span
+												class="ml-1 text-xs text-muted-foreground">&nbsp;· default</span
 											>{/if}</span
 									>
 									<span class="ml-auto truncate text-xs text-muted-foreground">{model.id}</span>
 								</span>
 								<span class="ml-6 flex gap-3 text-xs text-muted-foreground">
-									<span>{formatContextLength(model.contextLength)} ctx</span>
+									{#if model.contextLength}<span
+											>{formatContextLength(model.contextLength)} ctx</span
+										>{:else}<span>ctx unknown</span>{/if}
 									<span>{formatPrice(model)}</span>
 								</span>
 							</Command.Item>
@@ -143,13 +145,15 @@
 									/>
 									<span class="truncate text-sm font-medium"
 										>{model.label}{#if model.id === defaultModel}<span
-												class="ml-1 text-xs text-muted-foreground">· default</span
+												class="ml-1 text-xs text-muted-foreground">&nbsp;· default</span
 											>{/if}</span
 									>
 									<span class="ml-auto truncate text-xs text-muted-foreground">{model.id}</span>
 								</span>
 								<span class="ml-6 flex gap-3 text-xs text-muted-foreground">
-									<span>{formatContextLength(model.contextLength)} ctx</span>
+									{#if model.contextLength}<span
+											>{formatContextLength(model.contextLength)} ctx</span
+										>{:else}<span>ctx unknown</span>{/if}
 									<span>{formatPrice(model)}</span>
 								</span>
 							</Command.Item>

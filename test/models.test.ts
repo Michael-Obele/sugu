@@ -188,11 +188,18 @@ describe('costFor', () => {
 describe('catalogue invariants', () => {
 	test('direct DeepSeek models present even with only OpenRouter live models', async () => {
 		const { getModels, DIRECT_DEEPSEEK_MODELS } = await import('../src/server/models');
+		expect(DIRECT_DEEPSEEK_MODELS.length).toBeGreaterThanOrEqual(2);
+		expect(DIRECT_DEEPSEEK_MODELS.every((m) => m.provider === 'deepseek')).toBe(true);
 		// Simulate live catalogue with only OpenRouter entries
 		const fakePayload = {
 			data: [
 				{ id: 'openai/gpt-4o', name: 'GPT-4o', context_length: 128000, pricing: { prompt: '0.0000025', completion: '0.00001' } },
-				{ id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' } }
+				{
+					id: 'anthropic/claude-3.5-sonnet',
+					name: 'Claude 3.5 Sonnet',
+					context_length: 200000,
+					pricing: { prompt: '0.000003', completion: '0.000015' }
+				}
 			]
 		};
 		const fakeFetch = async () => new Response(JSON.stringify(fakePayload), { headers: { 'content-type': 'application/json' } });
@@ -228,7 +235,9 @@ describe('catalogue invariants', () => {
 	test('fallback path still has direct models and no duplicates', async () => {
 		const { getModels } = await import('../src/server/models');
 		// Force fallback via failing fetch and no cache
-		const failingFetch = async () => { throw new Error('network down'); };
+		const failingFetch = async () => {
+			throw new Error('network down');
+		};
 		const result = await getModels({}, { fetchImpl: failingFetch as unknown as typeof fetch, cacheImpl: null });
 		expect(result.source).toBe('fallback');
 		expect(result.models.some((m) => m.id === 'deepseek-chat')).toBe(true);
@@ -249,4 +258,3 @@ describe('catalogue invariants', () => {
 		expect(merged.filter((m) => m.id === 'deepseek-chat').length).toBe(1);
 	});
 });
-
